@@ -31,24 +31,28 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
-    <key>InputMethodConnectionName</key><string>TypeTranslator_Connection</string>
+    <key>InputMethodConnectionName</key><string>com.typetranslator.inputmethod_Connection</string>
     <key>InputMethodServerControllerClass</key><string>TranslatorInputController</string>
     <key>ComponentInputModeDict</key>
     <dict>
         <key>tsInputModeListKey</key>
         <dict>
-            <key>com.typetranslator.english-to-zhtw</key>
+            <key>com.typetranslator.inputmethod.EnglishToZhTW</key>
             <dict>
-                <key>TISInputSourceID</key><string>com.typetranslator.english-to-zhtw</string>
+                <key>TISInputSourceID</key><string>com.typetranslator.inputmethod.EnglishToZhTW</string>
+                <key>TISIntendedLanguage</key><string>en</string>
                 <key>tsInputModeAlternateMenuTitleKey</key><string>English → 台灣中文</string>
+                <key>tsInputModeCharacterRepertoireKey</key>
+                <array><string>Latn</string></array>
                 <key>tsInputModeIsVisibleKey</key><true/>
                 <key>tsInputModePrimaryInScriptKey</key><true/>
                 <key>tsInputModeScriptKey</key><string>smUnicodeScript</string>
                 <key>tsInputModeKeyEquivalentKey</key><string></string>
+                <key>tsInputModeKeyEquivalentModifiersKey</key><integer>0</integer>
             </dict>
         </dict>
         <key>tsVisibleInputModeOrderedArrayKey</key>
-        <array><string>com.typetranslator.english-to-zhtw</string></array>
+        <array><string>com.typetranslator.inputmethod.EnglishToZhTW</string></array>
     </dict>
 </dict>
 </plist>
