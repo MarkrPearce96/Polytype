@@ -28,9 +28,24 @@ public final class AppleEngine: TranslationEngine, @unchecked Sendable {
         )
         do {
             let session = try await SessionProvider.session(for: config)
-            let response = try await session.translate(english)
-            guard !response.targetText.isEmpty else { throw TranslationError.empty }
-            return response.targetText
+            // Session acquisition above is bridged via `ResumeOnceGate` because the
+            // producer (`.translationTask`) has no cancellation hook of its own.
+            // `TranslationSession.translate` is different: it's a genuinely
+            // cancellable async call, so the plain `withTimeout` race is correct
+            // here — if the timeout wins, cancelling the losing `translate` child
+            // task actually unwinds it instead of leaving an orphaned awaiter. This
+            // bounds the call so a stall inside Apple's framework surfaces as a
+            // `TranslationError` instead of hanging `translate` forever. Reuses the
+            // same timeout duration as session acquisition as a single source of
+            // truth.
+            let targetText = try await withTimeout(
+                seconds: SessionProvider.sessionTimeout,
+                onTimeout: { TranslationError.network("apple: translate timeout") }
+            ) {
+                try await session.translate(english).targetText
+            }
+            guard !targetText.isEmpty else { throw TranslationError.empty }
+            return targetText
         } catch let e as TranslationError {
             throw e
         } catch {
@@ -74,7 +89,12 @@ final class SessionProvider {
     /// task group cannot interrupt a bare `withCheckedContinuation` that the framework
     /// never resumes, so a naive race would still hang forever if `.translationTask`
     /// never fires. See `ResumeOnceGate`.
-    private static let sessionTimeout: Duration = .seconds(20)
+    ///
+    /// `fileprivate` (not `private`) so `AppleEngine.translate` can reuse this exact
+    /// duration for its own (unrelated, `withTimeout`-based) bound on
+    /// `session.translate` — one source of truth for both timeouts rather than a
+    /// second, potentially-drifting literal.
+    fileprivate static let sessionTimeout: Duration = .seconds(20)
 
     private var window: NSWindow?
     private var cachedSession: TranslationSession?
