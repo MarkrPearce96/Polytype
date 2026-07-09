@@ -8,14 +8,8 @@ let package = Package(
         .package(path: "../TranslationCore"),
     ],
     targets: [
-        .executableTarget(
-            name: "TypeTranslator",
-            dependencies: [
-                .product(name: "TranslationCore", package: "TranslationCore"),
-            ]
-        ),
-        // Menu-bar + global-hotkey delivery (the free path — no input-source
-        // registration, no notarization). Reuses TranslationCore unchanged.
+        // Menu-bar + global-hotkey app: type in any app, press the hotkey, and
+        // the text is translated in place. Uses TranslationCore for the engines.
         .executableTarget(
             name: "TypeTranslatorBar",
             dependencies: [

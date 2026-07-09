@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var key: String = ""
     @State private var status: String = ""
     @State private var hotkeyDisplay: String = HotkeyController.shared.display
+    @State private var launchAtLogin: Bool = LoginItem.isEnabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -33,6 +34,18 @@ struct SettingsView: View {
             Text("Click the button, then press the keys you want (must include ⌘, ⌥, ⌃, or ⇧). "
                  + "Press it in any app to translate the text you just typed, in place.")
                 .font(.caption).foregroundStyle(.secondary)
+
+            Divider()
+
+            Toggle("Launch at login", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) { _, newValue in
+                    if let error = LoginItem.setEnabled(newValue) {
+                        status = error
+                        launchAtLogin = LoginItem.isEnabled   // reflect actual state
+                    } else {
+                        status = newValue ? "Will start automatically at login." : "Won't start at login."
+                    }
+                }
 
             Divider()
 
