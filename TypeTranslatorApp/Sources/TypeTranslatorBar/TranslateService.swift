@@ -14,18 +14,35 @@ import TranslationCore
 ///   6. Restore the original clipboard a beat later.
 ///
 /// Steps 2/5 require Accessibility permission (to post synthetic keystrokes).
+/// Thread-safe flag set by `FallbackChain.onFallback` (which may fire off the
+/// main actor) so the service can tell, after a translation, whether the Apple
+/// fallback was used instead of Google.
+final class FallbackFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value = false
+    var value: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _value }
+        set { lock.lock(); _value = newValue; lock.unlock() }
+    }
+}
+
 @MainActor
 final class TranslateService {
     private let engine: TranslationEngine
+    private let fallbackFlag: FallbackFlag
     private let target = "zh-TW"
     private var busy = false
     private var opToken = 0
 
     /// Brief single-glyph status for the menu-bar button ("…", "✓", "⚠", "∅").
     var onStatus: ((String) -> Void)?
+    /// Name of the engine that produced the last successful translation
+    /// ("Google" or "Apple (offline)").
+    var onEngineUsed: ((String) -> Void)?
 
-    init(engine: TranslationEngine) {
+    init(engine: TranslationEngine, fallbackFlag: FallbackFlag = FallbackFlag()) {
         self.engine = engine
+        self.fallbackFlag = fallbackFlag
     }
 
     func translateSelectionInPlace() {
@@ -77,6 +94,7 @@ final class TranslateService {
         }
         Task { @MainActor in
             do {
+                self.fallbackFlag.value = false   // reset before the call
                 let mandarin = try await self.engine.translate(english, to: self.target)
                 guard !mandarin.isEmpty else {
                     self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
@@ -85,6 +103,7 @@ final class TranslateService {
                 pb.clearContents()
                 pb.setString(mandarin, forType: .string)
                 self.postCommandKey(CGKeyCode(kVK_ANSI_V))   // paste Mandarin
+                self.onEngineUsed?(self.fallbackFlag.value ? "Apple (offline)" : "Google")
                 self.finish(status: "✓", restore: saved, to: pb, after: 0.4)
             } catch {
                 self.finish(status: "⚠", restore: saved, to: pb, after: 0.1)

@@ -5,6 +5,7 @@ import TranslationCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
+    private var lastEngineItem: NSMenuItem!
     private var hotKey: HotKey?
     private var service: TranslateService!
     private let defaultTitle = "譯"
@@ -15,13 +16,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let secrets = KeychainSecretStore()
         let http = URLSessionHTTPClient()
         let google = GoogleEngine(secrets: secrets, http: http)
+        let flag = FallbackFlag()
         let engine: TranslationEngine
         if #available(macOS 15, *) {
-            engine = FallbackChain(primary: google, fallback: AppleEngine())
+            let chain = FallbackChain(primary: google, fallback: AppleEngine())
+            chain.onFallback = { _ in flag.value = true }   // Google failed → Apple used
+            engine = chain
         } else {
             engine = google
         }
-        service = TranslateService(engine: engine)
+        service = TranslateService(engine: engine, fallbackFlag: flag)
 
         // Menu-bar item.
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -35,11 +39,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Translate what I typed  (⌥⌘T)",
                      action: #selector(translateNow), keyEquivalent: "")
         menu.addItem(.separator())
+        lastEngineItem = NSMenuItem(title: "Last translation: —", action: nil, keyEquivalent: "")
+        lastEngineItem.isEnabled = false
+        menu.addItem(lastEngineItem)
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Type Translator", action: #selector(quit), keyEquivalent: "q")
-        for item in menu.items { item.target = self }
+        for item in menu.items where item.action != nil { item.target = self }
         statusItem.menu = menu
+
+        service.onEngineUsed = { [weak self] name in
+            self?.lastEngineItem.title = "Last translation: \(name)"
+        }
 
         // Global hotkey: ⌥⌘T.
         hotKey = HotKey(keyCode: UInt32(kVK_ANSI_T),
