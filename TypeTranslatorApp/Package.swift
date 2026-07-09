@@ -14,5 +14,13 @@ let package = Package(
                 .product(name: "TranslationCore", package: "TranslationCore"),
             ]
         ),
+        // Menu-bar + global-hotkey delivery (the free path — no input-source
+        // registration, no notarization). Reuses TranslationCore unchanged.
+        .executableTarget(
+            name: "TypeTranslatorBar",
+            dependencies: [
+                .product(name: "TranslationCore", package: "TranslationCore"),
+            ]
+        ),
     ]
 )
