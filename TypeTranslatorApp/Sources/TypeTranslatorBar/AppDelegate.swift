@@ -73,17 +73,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Put our colored app icon in the menu bar. Returns false if the image
     /// isn't found (then we fall back to the 譯 text label).
     private func installMenuBarIcon() -> Bool {
-        // Load straight from the bundle resource (more reliable than NSImage(named:)
-        // for a loose PNG). menubar.png is 36px → shown at 18pt, crisp on Retina.
-        let image: NSImage?
-        if let url = Bundle.main.url(forResource: "menubar", withExtension: "png") {
-            image = NSImage(contentsOf: url)
-        } else {
-            image = NSImage(named: "menubar")
-        }
-        guard let icon = image else { return false }
-        icon.isTemplate = false             // keep the colored globe (not tinted)
-        icon.size = NSSize(width: 18, height: 18)
+        // Menu-bar icons must be TEMPLATE images so macOS renders them adaptively
+        // (black on light menu bars, white on dark) and they stay visible on any
+        // wallpaper — a colored icon disappears, like every other menu-bar glyph.
+        // The colorful globe remains the app (Finder/Dock) icon. We use the system
+        // "globe" symbol directly, which is already a crisp template at any size.
+        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+        guard let icon = NSImage(systemSymbolName: "globe", accessibilityDescription: "Type Translator")?
+            .withSymbolConfiguration(config) else { return false }
+        icon.isTemplate = true
         statusItem.button?.image = icon
         statusItem.button?.imagePosition = .imageLeft
         return true

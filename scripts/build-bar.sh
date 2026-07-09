@@ -18,10 +18,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$BIN_NAME"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-# App icon (Finder/Dock) + menu-bar images.
+# App icon (Finder/Dock). The menu-bar icon uses the system "globe" template
+# symbol at runtime, so no menu-bar image is bundled.
 cp "$ROOT/TypeTranslatorApp/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
-cp "$ROOT/TypeTranslatorApp/assets/menubar.png" "$APP/Contents/Resources/menubar.png"
-cp "$ROOT/TypeTranslatorApp/assets/menubar@2x.png" "$APP/Contents/Resources/menubar@2x.png"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
