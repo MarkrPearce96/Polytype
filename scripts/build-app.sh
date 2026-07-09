@@ -68,8 +68,24 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-echo "==> Ad-hoc code signing…"
-codesign --force --sign - --timestamp=none "$APP"
-codesign --verify --verbose "$APP" >/dev/null 2>&1 && echo "    signature OK"
+# macOS 26 (Tahoe) will silently ignore an ad-hoc-signed input method during the
+# login-scan that populates the input-source database. Sign with a real identity
+# (Apple Development / Developer ID) so the bundle gets a Team Identifier.
+SIGN_ID="${CODESIGN_IDENTITY:-}"
+if [ -z "$SIGN_ID" ]; then
+    SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+        | grep -Eo '"(Developer ID Application|Apple Development)[^"]*"' | head -1 | tr -d '"')"
+fi
+
+if [ -n "$SIGN_ID" ]; then
+    echo "==> Code signing with: $SIGN_ID"
+    codesign --force --deep --sign "$SIGN_ID" --timestamp=none "$APP"
+else
+    echo "==> WARNING: no real signing identity found — falling back to ad-hoc"
+    echo "    (a new input method may NOT register on macOS 15+/26 when ad-hoc signed)"
+    codesign --force --sign - --timestamp=none "$APP"
+fi
+codesign --verify --verbose "$APP" >/dev/null 2>&1 && echo "    signature verifies"
+echo "    identity: $(codesign -dvvv "$APP" 2>&1 | grep -E 'TeamIdentifier|Authority=' | head -2 | tr '\n' ' ')"
 
 echo "==> Built: $APP"
