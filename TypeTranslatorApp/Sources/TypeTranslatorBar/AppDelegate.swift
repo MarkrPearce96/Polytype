@@ -26,12 +26,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         service = TranslateService(engine: engine, fallbackFlag: flag)
 
-        // Menu-bar item.
+        // Menu-bar item — our app icon, with a transient status glyph beside it
+        // during a translation ("…", "✓", "⚠").
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = defaultTitle
+        let hasIcon = installMenuBarIcon()
+        if !hasIcon { statusItem.button?.title = defaultTitle }
         service.onStatus = { [weak self] glyph in
             guard let self else { return }
-            self.statusItem.button?.title = glyph.isEmpty ? self.defaultTitle : glyph
+            if hasIcon {
+                self.statusItem.button?.title = glyph          // "" clears it
+            } else {
+                self.statusItem.button?.title = glyph.isEmpty ? self.defaultTitle : glyph
+            }
         }
 
         let menu = NSMenu()
@@ -62,6 +68,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Ask for Accessibility up front so the first hotkey press isn't a no-op.
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+    }
+
+    /// Put our colored app icon in the menu bar. Returns false if the image
+    /// isn't found (then we fall back to the 譯 text label).
+    private func installMenuBarIcon() -> Bool {
+        guard let image = NSImage(named: "menubar") else { return false }
+        image.isTemplate = false            // keep the colored icon (not tinted)
+        image.size = NSSize(width: 18, height: 18)
+        statusItem.button?.image = image
+        statusItem.button?.imagePosition = .imageLeft
+        return true
     }
 
     @objc private func translateNow() {
