@@ -8,6 +8,7 @@ struct SettingsView: View {
     private let secrets = KeychainSecretStore()
     @State private var key: String = ""
     @State private var status: String = ""
+    @State private var hotkeyDisplay: String = HotkeyController.shared.display
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -17,7 +18,20 @@ struct SettingsView: View {
 
             Divider()
 
-            Text("Press ⌥⌘T in any app to translate the text you just typed, in place.")
+            HStack(spacing: 8) {
+                Text("Shortcut:").font(.callout)
+                HotkeyRecorder(current: hotkeyDisplay) { keyCode, mods, display in
+                    if HotkeyController.shared.update(keyCode: keyCode, carbonMods: mods, display: display) {
+                        hotkeyDisplay = display
+                        status = "Shortcut set to \(display)."
+                    } else {
+                        status = "That shortcut is already in use by another app — try another."
+                    }
+                }
+                .frame(width: 150, height: 26)
+            }
+            Text("Click the button, then press the keys you want (must include ⌘, ⌥, ⌃, or ⇧). "
+                 + "Press it in any app to translate the text you just typed, in place.")
                 .font(.caption).foregroundStyle(.secondary)
 
             Divider()

@@ -1,12 +1,11 @@
 import AppKit
-import Carbon
 import TranslationCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var lastEngineItem: NSMenuItem!
-    private var hotKey: HotKey?
+    private var translateItem: NSMenuItem!
     private var service: TranslateService!
     private let defaultTitle = "譯"
 
@@ -36,8 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        menu.addItem(withTitle: "Translate what I typed  (⌥⌘T)",
-                     action: #selector(translateNow), keyEquivalent: "")
+        translateItem = NSMenuItem(title: "Translate what I typed  (\(HotkeyController.shared.display))",
+                                   action: #selector(translateNow), keyEquivalent: "")
+        menu.addItem(translateItem)
         menu.addItem(.separator())
         lastEngineItem = NSMenuItem(title: "Last translation: —", action: nil, keyEquivalent: "")
         lastEngineItem.isEnabled = false
@@ -53,11 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.lastEngineItem.title = "Last translation: \(name)"
         }
 
-        // Global hotkey: ⌥⌘T.
-        hotKey = HotKey(keyCode: UInt32(kVK_ANSI_T),
-                        modifiers: UInt32(cmdKey | optionKey)) { [weak self] in
-            self?.translateNow()
+        // Global hotkey (default ⌥⌘T; changeable in Settings).
+        HotkeyController.shared.action = { [weak self] in self?.translateNow() }
+        HotkeyController.shared.onChange = { [weak self] display in
+            self?.translateItem.title = "Translate what I typed  (\(display))"
         }
+        HotkeyController.shared.register()
 
         // Ask for Accessibility up front so the first hotkey press isn't a no-op.
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
