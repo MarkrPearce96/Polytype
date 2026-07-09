@@ -61,6 +61,22 @@ final class DeepLEngineTests: XCTestCase {
             guard case .network = ($0 as? TranslationError) else { return XCTFail("expected .network") }
         }
     }
+
+    func testServerErrorThrowsHTTPStatus() async {
+        let http = MockHTTP(.success(HTTPResponse(status: 500, body: Data())))
+        let engine = DeepLEngine(secrets: secrets("k"), http: http)
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+            XCTAssertEqual($0 as? TranslationError, .http(500))
+        }
+    }
+
+    func testEmptyBodyThrowsEmpty() async {
+        let http = MockHTTP(.success(HTTPResponse(status: 200, body: "{}".data(using: .utf8)!)))
+        let engine = DeepLEngine(secrets: secrets("k"), http: http)
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+            XCTAssertEqual($0 as? TranslationError, .empty)
+        }
+    }
 }
 
 /// Async throwing assertion helper.
