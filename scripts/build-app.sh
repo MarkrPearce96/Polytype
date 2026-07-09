@@ -31,6 +31,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
+    <!-- Top-level keys the input-source scanner requires. Both working system
+         input methods (AinuIM, TamilIM) carry these at the TOP level — burying
+         them inside ComponentInputModeDict makes the source fail to register. -->
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSSupportsSuddenTermination</key><true/>
+    <key>TISInputSourceID</key><string>com.typetranslator.inputmethod</string>
+    <key>TISIntendedLanguage</key><string>en</string>
+    <key>tsInputMethodCharacterRepertoireKey</key>
+    <array><string>Latn</string></array>
     <key>InputMethodConnectionName</key><string>com.typetranslator.inputmethod_Connection</string>
     <key>InputMethodServerControllerClass</key><string>TranslatorInputController</string>
     <key>ComponentInputModeDict</key>
@@ -45,6 +54,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
                 <key>tsInputModeCharacterRepertoireKey</key>
                 <array><string>Latn</string></array>
                 <key>tsInputModeIsVisibleKey</key><true/>
+                <key>tsInputModeDefaultStateKey</key><true/>
                 <key>tsInputModePrimaryInScriptKey</key><true/>
                 <key>tsInputModeScriptKey</key><string>smUnicodeScript</string>
                 <key>tsInputModeKeyEquivalentKey</key><string></string>
