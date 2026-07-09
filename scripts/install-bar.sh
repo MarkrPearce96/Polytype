@@ -19,6 +19,10 @@ else
     sudo cp -R "$APP" "$DEST"
 fi
 
+# Remove the freshly-built copy so it doesn't linger as a second "Type
+# Translator" in Spotlight/Launchpad — the installed /Applications copy is canonical.
+rm -rf "$APP"
+
 echo "==> Launching from /Applications"
 open "$DEST"
 echo "Done. In the app's Settings you can now enable 'Launch at login'."

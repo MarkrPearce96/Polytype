@@ -73,10 +73,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Put our colored app icon in the menu bar. Returns false if the image
     /// isn't found (then we fall back to the 譯 text label).
     private func installMenuBarIcon() -> Bool {
-        guard let image = NSImage(named: "menubar") else { return false }
-        image.isTemplate = false            // keep the colored icon (not tinted)
-        image.size = NSSize(width: 18, height: 18)
-        statusItem.button?.image = image
+        // Load straight from the bundle resource (more reliable than NSImage(named:)
+        // for a loose PNG). menubar.png is 36px → shown at 18pt, crisp on Retina.
+        let image: NSImage?
+        if let url = Bundle.main.url(forResource: "menubar", withExtension: "png") {
+            image = NSImage(contentsOf: url)
+        } else {
+            image = NSImage(named: "menubar")
+        }
+        guard let icon = image else { return false }
+        icon.isTemplate = false             // keep the colored globe (not tinted)
+        icon.size = NSSize(width: 18, height: 18)
+        statusItem.button?.image = icon
         statusItem.button?.imagePosition = .imageLeft
         return true
     }
