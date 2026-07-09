@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Target OS: macOS 26 (present on the build machine); Apple Translation framework requires macOS 15+.
+- Target OS: macOS 26 (present on the build machine). The `TranslationCore` package pins swift-tools-version 5.9 with platform floor `.macOS(.v14)` (`.macOS(.v15)` would force tools-version 6.0). macOS-15-only APIs — the Apple Translation framework in Task 5 — are gated with `@available(macOS 15.0, *)`; the Xcode app target (Task 6) is macOS 15+.
 - Target language fixed to Taiwanese Mandarin Traditional; DeepL target code `ZH-HANT`, Apple locale `zh-TW`. Engines still accept a target parameter (no hardcoding inside logic).
 - Source language: English (`EN`).
 - Free-to-run: DeepL **free** endpoint host `api-free.deepl.com`; Apple engine is the always-available fallback.
@@ -44,7 +44,7 @@ import PackageDescription
 
 let package = Package(
     name: "TranslationCore",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "TranslationCore", targets: ["TranslationCore"]),
     ],
