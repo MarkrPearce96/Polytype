@@ -47,8 +47,8 @@ public final class AppleEngine: TranslationEngine, @unchecked Sendable {
 /// the primary path here). The system only vends a session to a SwiftUI view via
 /// `.translationTask(_:action:)`. To use it from a plain async context, this hosts a
 /// throwaway `NSHostingView` carrying that modifier inside a practically-invisible
-/// `NSWindow`, captures the session the system hands to the view, and resumes a
-/// `CheckedContinuation` with it.
+/// `NSWindow`, captures the session the system hands to the view, and hands it back
+/// to plain async/await via a `ResumeOnceGate` (see below).
 ///
 /// The host window is kept ON the main screen (not moved off the physical display) at
 /// near-zero alpha and 1x1 size: if the system needs a real anchor point to present its
@@ -66,50 +66,90 @@ final class SessionProvider {
     /// How long to wait for the system to vend a session before giving up, so a stalled
     /// bridge (e.g. the offscreen host never getting a rendering pass) surfaces as a
     /// thrown `TranslationError` instead of hanging `AppleEngine.translate` forever.
+    ///
+    /// This deadline is enforced by resuming the SAME `ResumeOnceGate` that the
+    /// producer (the `.translationTask` callback) resumes — never by racing a
+    /// `Task.sleep` against an uncancellable awaiter in a `TaskGroup`. That distinction
+    /// is what makes the timeout actually able to unblock `translate`: cancelling a
+    /// task group cannot interrupt a bare `withCheckedContinuation` that the framework
+    /// never resumes, so a naive race would still hang forever if `.translationTask`
+    /// never fires. See `ResumeOnceGate`.
     private static let sessionTimeout: Duration = .seconds(20)
 
     private var window: NSWindow?
-    private var continuation: CheckedContinuation<TranslationSession, Never>?
     private var cachedSession: TranslationSession?
     private var cachedConfiguration: TranslationSession.Configuration?
 
+    /// Resolutions currently in flight, keyed by configuration. Concurrent callers for
+    /// the SAME configuration await the SAME `Task` here rather than each starting
+    /// their own resolution (which would install a second hosting window and orphan
+    /// the first caller) or racing to publish `cachedConfiguration`/`cachedSession`
+    /// independently (which could let a concurrent caller observe a configuration/
+    /// session pair that never actually corresponded to each other). The cache is only
+    /// ever published atomically, after a resolution actually completes — never
+    /// optimistically while it's still in flight.
+    private var inFlightResolutions: [(configuration: TranslationSession.Configuration, task: Task<TranslationSession, Error>)] = []
+
     static func session(for configuration: TranslationSession.Configuration) async throws -> TranslationSession {
-        try await withThrowingTaskGroup(of: TranslationSession.self) { group in
-            group.addTask { @MainActor in
-                let provider = current ?? SessionProvider()
-                current = provider
-                return await provider.resolveSession(for: configuration)
-            }
-            group.addTask {
-                try await Task.sleep(for: sessionTimeout)
-                throw TranslationError.network("apple: timed out waiting for TranslationSession")
-            }
-            defer { group.cancelAll() }
-            guard let first = try await group.next() else {
-                throw TranslationError.network("apple: session resolution produced no result")
-            }
-            return first
-        }
+        let provider = current ?? SessionProvider()
+        current = provider
+        return try await provider.resolveSession(for: configuration)
     }
 
-    private func resolveSession(for configuration: TranslationSession.Configuration) async -> TranslationSession {
+    private func resolveSession(for configuration: TranslationSession.Configuration) async throws -> TranslationSession {
         if let cachedSession, cachedConfiguration == configuration {
             return cachedSession
         }
 
-        return await withCheckedContinuation { (continuation: CheckedContinuation<TranslationSession, Never>) in
-            self.continuation = continuation
-            self.cachedConfiguration = configuration
-            installHostingWindow(configuration: configuration)
+        if let existing = inFlightResolutions.first(where: { $0.configuration == configuration }) {
+            return try await existing.task.value
+        }
+
+        // Everything above is synchronous (no `await`), so no other call can observe
+        // `inFlightResolutions` between the check above and the append below: on
+        // `@MainActor`, this whole slice runs to completion before any other task gets
+        // a chance to run. That's what guarantees at most one in-flight resolution per
+        // configuration.
+        let task = Task { @MainActor in
+            try await self.startResolution(for: configuration)
+        }
+        inFlightResolutions.append((configuration, task))
+
+        do {
+            let session = try await task.value
+            inFlightResolutions.removeAll { $0.configuration == configuration }
+            // Published atomically, together, only now that resolution has actually
+            // succeeded — never optimistically before the session exists.
+            cachedConfiguration = configuration
+            cachedSession = session
+            return session
+        } catch {
+            inFlightResolutions.removeAll { $0.configuration == configuration }
+            throw error
         }
     }
 
-    private func installHostingWindow(configuration: TranslationSession.Configuration) {
+    /// Drives one resolution attempt: arms a hang-proof timeout, installs the hosting
+    /// window to trigger `.translationTask`, then waits for whichever of the producer
+    /// or the timeout resumes the gate first.
+    private func startResolution(for configuration: TranslationSession.Configuration) async throws -> TranslationSession {
+        let gate = ResumeOnceGate<TranslationSession>()
+        await gate.armTimeout(after: Self.sessionTimeout) {
+            TranslationError.network("apple: session timeout")
+        }
+        installHostingWindow(configuration: configuration, gate: gate)
+        return try await gate.wait()
+    }
+
+    private func installHostingWindow(
+        configuration: TranslationSession.Configuration,
+        gate: ResumeOnceGate<TranslationSession>
+    ) {
         window?.close()
 
         let hostingView = NSHostingView(
-            rootView: TranslationBridgeView(configuration: configuration) { [weak self] session in
-                self?.handle(session)
+            rootView: TranslationBridgeView(configuration: configuration) { session in
+                await gate.resume(returning: session)
             }
         )
 
@@ -135,13 +175,6 @@ final class SessionProvider {
 
         self.window = window
     }
-
-    private func handle(_ session: TranslationSession) {
-        guard let continuation else { return }
-        self.continuation = nil
-        cachedSession = session
-        continuation.resume(returning: session)
-    }
 }
 
 /// A trivial SwiftUI view whose only purpose is to carry `.translationTask` so the
@@ -149,13 +182,13 @@ final class SessionProvider {
 @available(macOS 15.0, *)
 private struct TranslationBridgeView: View {
     let configuration: TranslationSession.Configuration
-    let onSession: (TranslationSession) -> Void
+    let onSession: (TranslationSession) async -> Void
 
     var body: some View {
         Color.clear
             .frame(width: 1, height: 1)
             .translationTask(configuration) { session in
-                onSession(session)
+                await onSession(session)
                 // The session is only valid while this closure is running; SwiftUI
                 // tears it down once we return. Stay suspended (waking periodically
                 // only to check for cancellation) so the session remains usable for as
