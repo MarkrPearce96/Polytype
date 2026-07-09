@@ -10,15 +10,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let defaultTitle = "譯"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Build the same engine the input-method version used: DeepL primary,
-        // Apple on-device fallback (macOS 15+).
+        // Google Cloud Translation primary (free 500k chars/month), Apple
+        // on-device as the offline/no-key fallback (macOS 15+).
         let secrets = KeychainSecretStore()
-        let deepl = DeepLEngine(secrets: secrets, http: URLSessionHTTPClient())
+        let http = URLSessionHTTPClient()
+        let google = GoogleEngine(secrets: secrets, http: http)
         let engine: TranslationEngine
         if #available(macOS 15, *) {
-            engine = FallbackChain(primary: deepl, fallback: AppleEngine())
+            engine = FallbackChain(primary: google, fallback: AppleEngine())
         } else {
-            engine = deepl
+            engine = google
         }
         service = TranslateService(engine: engine)
 

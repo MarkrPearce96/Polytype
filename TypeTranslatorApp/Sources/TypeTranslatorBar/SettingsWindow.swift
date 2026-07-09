@@ -22,14 +22,15 @@ struct SettingsView: View {
 
             Divider()
 
-            Text("DeepL API key — optional. Leave blank to use Apple's on-device translation only.")
+            Text("Google Cloud Translation API key (free tier: 500,000 characters/month). "
+                 + "Leave blank to use Apple's on-device translation only.")
                 .font(.caption).foregroundStyle(.secondary)
-            SecureField("DeepL-Auth-Key…", text: $key)
+            SecureField("Google API key…", text: $key)
                 .textFieldStyle(.roundedBorder)
 
             HStack {
                 Button("Save key") {
-                    secrets.set(key.isEmpty ? nil : key, for: deepLKeyName)
+                    secrets.set(key.isEmpty ? nil : key, for: googleKeyName)
                     status = key.isEmpty
                         ? "Key cleared — using Apple on-device only."
                         : "Key saved to Keychain."
@@ -51,7 +52,7 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 440)
-        .onAppear { key = secrets.get(deepLKeyName) ?? "" }
+        .onAppear { key = secrets.get(googleKeyName) ?? "" }
     }
 }
 

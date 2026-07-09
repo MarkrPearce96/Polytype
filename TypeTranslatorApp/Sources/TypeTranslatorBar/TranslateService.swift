@@ -19,6 +19,7 @@ final class TranslateService {
     private let engine: TranslationEngine
     private let target = "zh-TW"
     private var busy = false
+    private var opToken = 0
 
     /// Brief single-glyph status for the menu-bar button ("…", "✓", "⚠", "∅").
     var onStatus: ((String) -> Void)?
@@ -36,35 +37,72 @@ final class TranslateService {
         }
         busy = true
         onStatus?("…")
+        armWatchdog()
 
         let pb = NSPasteboard.general
         let saved = pb.string(forType: .string)
+
+        // Copy whatever is CURRENTLY selected first — don't select-all yet. If the
+        // user selected a sentence, this grabs just that. Only if nothing is
+        // selected (clipboard unchanged) do we fall back to select-all, which
+        // suits an otherwise-empty compose field but would grab a whole document.
         let before = pb.changeCount
-
-        postCommandKey(CGKeyCode(kVK_ANSI_A))   // select all
-        postCommandKey(CGKeyCode(kVK_ANSI_C))   // copy
-
-        waitForClipboardChange(pb, from: before, attempts: 30) { [weak self] changed in
+        postCommandKey(CGKeyCode(kVK_ANSI_C))
+        waitForClipboardChange(pb, from: before, attempts: 12) { [weak self] hadSelection in
             guard let self else { return }
-            let english = pb.string(forType: .string) ?? ""
-            guard changed, !english.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
-                return
-            }
-            Task { @MainActor in
-                do {
-                    let mandarin = try await self.engine.translate(english, to: self.target)
-                    guard !mandarin.isEmpty else {
+            if hadSelection {
+                self.translateClipboard(pb: pb, saved: saved)
+            } else {
+                // Nothing was selected → select all, then copy.
+                let before2 = pb.changeCount
+                self.postCommandKey(CGKeyCode(kVK_ANSI_A))
+                self.postCommandKey(CGKeyCode(kVK_ANSI_C))
+                self.waitForClipboardChange(pb, from: before2, attempts: 25) { changed in
+                    if changed {
+                        self.translateClipboard(pb: pb, saved: saved)
+                    } else {
                         self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
-                        return
                     }
-                    pb.clearContents()
-                    pb.setString(mandarin, forType: .string)
-                    self.postCommandKey(CGKeyCode(kVK_ANSI_V))   // paste Mandarin
-                    self.finish(status: "✓", restore: saved, to: pb, after: 0.4)
-                } catch {
-                    self.finish(status: "⚠", restore: saved, to: pb, after: 0.1)
                 }
+            }
+        }
+    }
+
+    /// Translate whatever text is now on the clipboard, then paste it back.
+    private func translateClipboard(pb: NSPasteboard, saved: String?) {
+        let english = pb.string(forType: .string) ?? ""
+        guard !english.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            finish(status: "∅", restore: saved, to: pb, after: 0.1)
+            return
+        }
+        Task { @MainActor in
+            do {
+                let mandarin = try await self.engine.translate(english, to: self.target)
+                guard !mandarin.isEmpty else {
+                    self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
+                    return
+                }
+                pb.clearContents()
+                pb.setString(mandarin, forType: .string)
+                self.postCommandKey(CGKeyCode(kVK_ANSI_V))   // paste Mandarin
+                self.finish(status: "✓", restore: saved, to: pb, after: 0.4)
+            } catch {
+                self.finish(status: "⚠", restore: saved, to: pb, after: 0.1)
+            }
+        }
+    }
+
+    /// Backstop: if a translation never completes (e.g. a framework stall beyond
+    /// its own timeouts), force the app back to idle so the hotkey keeps working.
+    private func armWatchdog() {
+        opToken += 1
+        let token = opToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25) { [weak self] in
+            guard let self, self.busy, self.opToken == token else { return }
+            self.onStatus?("⚠")
+            self.busy = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                self?.onStatus?("")
             }
         }
     }
