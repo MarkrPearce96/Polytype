@@ -30,8 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let secrets = KeychainSecretStore()
         let http = URLSessionHTTPClient()
         let google = GoogleEngine(secrets: secrets, http: http)
-        let meter = UsageMeter(store: UserDefaultsUsageStore(),
-                               month: { MeterAccess.currentMonthKey() })
+        let meter = UsageMeter(store: UserDefaultsUsageStore(), now: { Date() })
         usageMeter = meter
         MeterAccess.meter = meter
         let gated = QuotaGate(primary: google, meter: meter)

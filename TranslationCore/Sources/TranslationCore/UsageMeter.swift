@@ -9,6 +9,8 @@ public protocol UsageStore: Sendable {
     func setString(_ value: String?, _ key: String)
     func bool(_ key: String) -> Bool
     func setBool(_ value: Bool, _ key: String)
+    func double(_ key: String) -> Double
+    func setDouble(_ value: Double, _ key: String)
 }
 
 /// Production `UsageStore` backed by `UserDefaults`. `UserDefaults` is
@@ -22,66 +24,89 @@ public final class UserDefaultsUsageStore: UsageStore, @unchecked Sendable {
     public func setString(_ value: String?, _ key: String) { defaults.set(value, forKey: key) }
     public func bool(_ key: String) -> Bool { defaults.bool(forKey: key) }
     public func setBool(_ value: Bool, _ key: String) { defaults.set(value, forKey: key) }
+    public func double(_ key: String) -> Double { defaults.double(forKey: key) }
+    public func setDouble(_ value: Double, _ key: String) { defaults.set(value, forKey: key) }
 }
 
 /// Tracks Google character usage against the monthly free tier, resetting when
-/// the calendar month changes. Thread-safe.
+/// the stored reset date passes. Thread-safe.
 public final class UsageMeter: @unchecked Sendable {
     public let limit = 500_000
     public let cap = 490_000
 
     private let store: UsageStore
-    private let month: @Sendable () -> String
+    private let now: @Sendable () -> Date
     private let lock = NSLock()
 
     private enum Key {
         static let used = "usage.used"
-        static let month = "usage.month"
         static let notified = "usage.notified"
+        static let nextReset = "usage.nextReset"   // timeIntervalSinceReferenceDate
     }
 
-    public init(store: UsageStore, month: @escaping @Sendable () -> String) {
+    public init(store: UsageStore, now: @escaping @Sendable () -> Date = { Date() }) {
         self.store = store
-        self.month = month
+        self.now = now
     }
 
-    /// Caller must hold `lock`. Zeroes the count when the month changed.
+    /// First of the month after `date` — the default reset when uncalibrated.
+    private func firstOfNextMonth(after date: Date) -> Date {
+        let cal = Calendar(identifier: .gregorian)
+        let startOfMonth = cal.date(from: cal.dateComponents([.year, .month], from: date)) ?? date
+        return cal.date(byAdding: .month, value: 1, to: startOfMonth) ?? date.addingTimeInterval(2_592_000)
+    }
+
+    /// Caller holds `lock`. Zero the count when the reset date has passed,
+    /// advancing the reset date by whole months until it's in the future.
     private func rolloverIfNeeded() {
-        let current = month()
-        if store.string(Key.month) != current {
-            store.setString(current, Key.month)
+        let current = now()
+        let stored = store.double(Key.nextReset)
+        var next = (stored == 0) ? firstOfNextMonth(after: current)
+                                 : Date(timeIntervalSinceReferenceDate: stored)
+        if current >= next {
+            let cal = Calendar(identifier: .gregorian)
+            while current >= next {
+                next = cal.date(byAdding: .month, value: 1, to: next) ?? next.addingTimeInterval(2_592_000)
+            }
             store.setInt(0, Key.used)
             store.setBool(false, Key.notified)
+            store.setDouble(next.timeIntervalSinceReferenceDate, Key.nextReset)
+        } else if stored == 0 {
+            store.setDouble(next.timeIntervalSinceReferenceDate, Key.nextReset)   // persist the default
         }
     }
 
     public var used: Int {
-        lock.lock(); defer { lock.unlock() }
-        rolloverIfNeeded()
-        return store.int(Key.used)
+        lock.lock(); defer { lock.unlock() }; rolloverIfNeeded(); return store.int(Key.used)
+    }
+
+    public var nextResetDate: Date {
+        lock.lock(); defer { lock.unlock() }; rolloverIfNeeded()
+        return Date(timeIntervalSinceReferenceDate: store.double(Key.nextReset))
     }
 
     public func canUseGoogle(adding chars: Int) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        rolloverIfNeeded()
-        return store.int(Key.used) + chars <= cap
+        lock.lock(); defer { lock.unlock() }; rolloverIfNeeded(); return store.int(Key.used) + chars <= cap
     }
 
     public func record(_ chars: Int) {
-        lock.lock(); defer { lock.unlock() }
-        rolloverIfNeeded()
+        lock.lock(); defer { lock.unlock() }; rolloverIfNeeded()
         store.setInt(store.int(Key.used) + chars, Key.used)
     }
 
     public var hasNotified: Bool {
-        lock.lock(); defer { lock.unlock() }
-        rolloverIfNeeded()
-        return store.bool(Key.notified)
+        lock.lock(); defer { lock.unlock() }; rolloverIfNeeded(); return store.bool(Key.notified)
     }
 
     public func markNotified() {
+        lock.lock(); defer { lock.unlock() }; rolloverIfNeeded(); store.setBool(true, Key.notified)
+    }
+
+    /// Set the counter to a known-exact value and renewal date (from the user).
+    public func calibrate(used chars: Int, nextReset date: Date) {
         lock.lock(); defer { lock.unlock() }
-        rolloverIfNeeded()
-        store.setBool(true, Key.notified)
+        store.setInt(max(0, chars), Key.used)
+        store.setDouble(date.timeIntervalSinceReferenceDate, Key.nextReset)
+        store.setBool(false, Key.notified)
     }
 }

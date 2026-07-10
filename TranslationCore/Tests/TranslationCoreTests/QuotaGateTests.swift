@@ -3,13 +3,16 @@ import XCTest
 
 private final class FakeStore2: UsageStore, @unchecked Sendable {
     private let lock = NSLock()
-    private var ints: [String: Int] = [:]; private var strings: [String: String] = [:]; private var bools: [String: Bool] = [:]
+    private var ints: [String: Int] = [:]; private var strings: [String: String] = [:]
+    private var bools: [String: Bool] = [:]; private var doubles: [String: Double] = [:]
     func int(_ key: String) -> Int { lock.lock(); defer { lock.unlock() }; return ints[key] ?? 0 }
     func setInt(_ v: Int, _ key: String) { lock.lock(); ints[key] = v; lock.unlock() }
     func string(_ key: String) -> String? { lock.lock(); defer { lock.unlock() }; return strings[key] }
     func setString(_ v: String?, _ key: String) { lock.lock(); strings[key] = v; lock.unlock() }
     func bool(_ key: String) -> Bool { lock.lock(); defer { lock.unlock() }; return bools[key] ?? false }
     func setBool(_ v: Bool, _ key: String) { lock.lock(); bools[key] = v; lock.unlock() }
+    func double(_ k: String) -> Double { lock.lock(); defer { lock.unlock() }; return doubles[k] ?? 0 }
+    func setDouble(_ v: Double, _ k: String) { lock.lock(); doubles[k] = v; lock.unlock() }
 }
 
 private final class SpyEngine: TranslationEngine, @unchecked Sendable {
@@ -23,7 +26,9 @@ private final class SpyEngine: TranslationEngine, @unchecked Sendable {
 }
 
 final class QuotaGateTests: XCTestCase {
-    private func meter() -> UsageMeter { UsageMeter(store: FakeStore2(), month: { "2026-7" }) }
+    private func meter() -> UsageMeter {
+        UsageMeter(store: FakeStore2(), now: { Date(timeIntervalSinceReferenceDate: 800_000_000) })
+    }
 
     func testUnderCapDelegatesAndRecords() async throws {
         let m = meter()
