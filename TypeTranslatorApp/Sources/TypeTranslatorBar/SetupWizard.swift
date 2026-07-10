@@ -19,10 +19,14 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
     func show() {
-        if window == nil {
-            let hosting = NSHostingController(rootView: SetupView(onFinish: { [weak self] in
-                self?.window?.close()
-            }))
+        // Always build a fresh SetupView so its @State (notably `step`) resets —
+        // reopening from the menu must start at Welcome, not the last step left on.
+        let hosting = NSHostingController(rootView: SetupView(onFinish: { [weak self] in
+            self?.window?.close()
+        }))
+        if let w = window {
+            w.contentViewController = hosting
+        } else {
             let w = NSWindow(contentViewController: hosting)
             w.title = "Set Up Type Translator"
             w.styleMask = [.titled, .closable]
@@ -90,7 +94,8 @@ struct SetupView: View {
             accessibilityGranted = AXIsProcessTrusted()
         }
         .onReceive(Timer.publish(every: 1.2, on: .main, in: .common).autoconnect()) { _ in
-            accessibilityGranted = AXIsProcessTrusted()
+            // Only poll while on the Accessibility step (step 1).
+            if step == 1 { accessibilityGranted = AXIsProcessTrusted() }
         }
     }
 
