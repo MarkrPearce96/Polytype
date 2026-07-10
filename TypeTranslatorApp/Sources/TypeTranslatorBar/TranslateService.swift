@@ -30,7 +30,6 @@ final class FallbackFlag: @unchecked Sendable {
 final class TranslateService {
     private let engine: TranslationEngine
     private let fallbackFlag: FallbackFlag
-    private let target = "zh-TW"
     private var busy = false
     private var opToken = 0
 
@@ -95,7 +94,7 @@ final class TranslateService {
         Task { @MainActor in
             do {
                 self.fallbackFlag.value = false   // reset before the call
-                let mandarin = try await self.engine.translate(english, from: "en", to: self.target)
+                let mandarin = try await self.engine.translate(english, from: "en", to: LanguagePrefs.composeTargetCode)
                 guard !mandarin.isEmpty else {
                     self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
                     return
@@ -141,11 +140,14 @@ final class TranslateService {
             }
             Task { @MainActor in
                 do {
-                    let english = try await self.engine.translate(chinese, from: "zh-TW", to: "en")
+                    let english = try await self.engine.translate(chinese, from: LanguagePrefs.readSourceCode, to: "en")
                     ResultPopup.shared.show(english.isEmpty ? "(no translation)" : english, at: cursor)
                     self.finishRead(status: "✓", restore: saved, to: pb)
                 } catch {
-                    ResultPopup.shared.show("Couldn't translate — check connection or API key.", at: cursor)
+                    let hint = LanguagePrefs.readSourceCode == Languages.autoCode
+                        ? "Couldn't translate. If you're offline, pick a Read language in the menu."
+                        : "Couldn't translate — check your connection or API key."
+                    ResultPopup.shared.show(hint, at: cursor)
                     self.finishRead(status: "⚠", restore: saved, to: pb)
                 }
             }
