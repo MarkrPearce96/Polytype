@@ -55,12 +55,16 @@ which `install-bar.sh` handles.)
 
 ## Usage
 
-- **Compose a message** (empty-ish field): type it, press the hotkey — the whole
-  field is translated.
-- **Existing document** (a note with other text): **select** the part you want
-  first, then press the hotkey — only the selection is touched.
-- **Change the hotkey:** Settings → Shortcut → click and press a new combo
-  (must include ⌘, ⌥, ⌃, or ⇧).
+- **Compose a message** (⌥⌘T, default): type it, press the hotkey — the whole
+  field is translated to Traditional Chinese and pasted back.
+- **Existing document** (select first): **select** the Chinese or English text you
+  want translated, then press the hotkey — only the selection is replaced.
+- **Read a message** (⌥⌘R, default): select any Chinese text on your screen (in a
+  message, web page, PDF, etc.), press the hotkey — a small popup near your cursor
+  shows the English translation. Nothing is changed or pasted; it's read-only. If
+  nothing is selected, the app beeps.
+- **Customize the hotkeys:** Both shortcuts are customizable in Settings → Shortcut
+  — click and press a new combo (must include ⌘, ⌥, ⌃, or ⇧).
 
 ## Project layout
 
