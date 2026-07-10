@@ -72,6 +72,7 @@ struct SetupView: View {
     @State private var readDisplay = "⌥⌘R"
     @State private var launchAtLogin = false
     @State private var accessibilityGranted = false
+    @State private var showKeyHelp = false
 
     private var brand: LinearGradient {
         LinearGradient(colors: [Color(red: 74/255, green: 125/255, blue: 1.0),
@@ -159,13 +160,42 @@ struct SetupView: View {
             Text("Paste a Google Cloud Translation key for the best quality — the free tier covers 500,000 characters/month.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             SecureField("Google API key…", text: $apiKey).textFieldStyle(.roundedBorder)
-            Link("Get a free key →", destination: URL(string: "https://console.cloud.google.com/apis/library/translate.googleapis.com")!)
-                .font(.callout)
+            DisclosureGroup("How do I get a key?", isExpanded: $showKeyHelp) {
+                VStack(alignment: .leading, spacing: 9) {
+                    keyHelpRow(1, "Create a project in Google Cloud Console",
+                               "https://console.cloud.google.com/projectcreate")
+                    keyHelpRow(2, "Enable the Cloud Translation API (adds a billing card — you're not charged under 500k characters/month)",
+                               "https://console.cloud.google.com/apis/library/translate.googleapis.com")
+                    keyHelpRow(3, "Open Credentials → Create credentials → API key, then paste it above",
+                               "https://console.cloud.google.com/apis/credentials")
+                }
+                .padding(.top, 8)
+            }
+            .font(.callout)
             Text("No key? Skip to use Apple's on-device translation (free, offline, slightly lower quality).")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
         .padding(28).frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// One numbered step in the "How do I get a key?" walkthrough — the whole
+    /// row links to the relevant Google Cloud Console page.
+    private func keyHelpRow(_ number: Int, _ text: String, _ urlString: String) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Text("\(number)")
+                .font(.caption.weight(.bold)).foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(brand, in: Circle())
+            if let url = URL(string: urlString) {
+                Link(destination: url) {
+                    Text(text).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text(text).fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var languageStep: some View {
