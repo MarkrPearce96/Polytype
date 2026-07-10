@@ -21,9 +21,25 @@ final class HotkeyController {
     init(id: String, defaultKeyCode: UInt32, defaultModifiers: UInt32, defaultDisplay: String) {
         self.id = id
         let d = UserDefaults.standard
-        keyCode = UInt32(d.object(forKey: "hotkey.\(id).keyCode") as? Int ?? Int(defaultKeyCode))
-        carbonMods = UInt32(d.object(forKey: "hotkey.\(id).modifiers") as? Int ?? Int(defaultModifiers))
-        display = d.string(forKey: "hotkey.\(id).display") ?? defaultDisplay
+
+        // One-time migration: the compose hotkey used to persist under flat keys
+        // (hotkeyKeyCode/hotkeyModifiers/hotkeyDisplay) before hotkeys were
+        // namespaced by id. If a user had customized it, carry that forward as the
+        // effective default so the upgrade doesn't silently reset their shortcut.
+        var effKeyCode = defaultKeyCode
+        var effMods = defaultModifiers
+        var effDisplay = defaultDisplay
+        if id == "compose",
+           d.object(forKey: "hotkey.compose.keyCode") == nil,
+           let legacyKeyCode = d.object(forKey: "hotkeyKeyCode") as? Int {
+            effKeyCode = UInt32(legacyKeyCode)
+            effMods = UInt32(d.object(forKey: "hotkeyModifiers") as? Int ?? Int(defaultModifiers))
+            effDisplay = d.string(forKey: "hotkeyDisplay") ?? defaultDisplay
+        }
+
+        keyCode = UInt32(d.object(forKey: "hotkey.\(id).keyCode") as? Int ?? Int(effKeyCode))
+        carbonMods = UInt32(d.object(forKey: "hotkey.\(id).modifiers") as? Int ?? Int(effMods))
+        display = d.string(forKey: "hotkey.\(id).display") ?? effDisplay
     }
 
     /// (Re)register the current combo. Returns false if the system rejected it
