@@ -135,7 +135,7 @@ struct SettingsView: View {
     private var usageSummary: String {
         guard let meter = MeterAccess.meter else { return "Usage tracking unavailable." }
         let used = meter.used
-        if used >= meter.cap {
+        if meter.hasNotified || used >= meter.cap {
             return "Free limit reached (\(used.formatted()) / \(meter.limit.formatted())). "
                  + "Using Apple on-device until \(MeterAccess.resetDateString())."
         }

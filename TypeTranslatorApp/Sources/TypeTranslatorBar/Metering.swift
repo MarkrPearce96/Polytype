@@ -17,7 +17,7 @@ enum MeterAccess {
 
     /// Human date the free tier resets (first of next month), e.g. "Aug 1".
     static func resetDateString() -> String {
-        let cal = Calendar.current
+        let cal = Calendar(identifier: .gregorian)
         guard let start = cal.date(from: cal.dateComponents([.year, .month], from: Date())),
               let next = cal.date(byAdding: .month, value: 1, to: start) else { return "next month" }
         let f = DateFormatter(); f.dateFormat = "MMM d"

@@ -188,7 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let used = meter.used
         usageBar?.maxValue = Double(meter.limit)
         usageBar?.doubleValue = Double(min(used, meter.limit))
-        if used >= meter.cap {
+        if meter.hasNotified || used >= meter.cap {
             usageLabel?.stringValue = "Free limit reached — on Apple until \(MeterAccess.resetDateString())"
         } else {
             usageLabel?.stringValue = "Usage  ≈\(shortCount(used)) / \(shortCount(meter.limit))"
