@@ -110,8 +110,7 @@ final class TranslateService {
         }
     }
 
-    /// Read mode: translate the current selection zh-TW → English and show it in a
-    /// popup near the cursor. Never pastes; restores the clipboard.
+    /// Read mode: translate the current selection (from the selected Read language, or auto-detected) to English and show it in a popup near the cursor. Never pastes; restores the clipboard.
     func translateSelectionToPopup() {
         guard !busy else { return }
         guard ensureAccessibility() else { onStatus?("⚠"); promptAccessibility(); return }
