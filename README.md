@@ -73,6 +73,10 @@ which `install-bar.sh` handles.)
   Korean, Spanish, French, German, Thai, Vietnamese.
 - **Customize the hotkeys:** Both shortcuts are customizable in Settings → Shortcut
   — click and press a new combo (must include ⌘, ⌥, ⌃, or ⇧).
+- **Monthly usage tracking** (Google free tier): The menu and Settings show your
+  monthly character count. The app automatically switches to Apple's on-device
+  engine before reaching the 500k limit to prevent charges — you'll receive a
+  one-time notification when it does. The counter resets each calendar month.
 
 ## Project layout
 
