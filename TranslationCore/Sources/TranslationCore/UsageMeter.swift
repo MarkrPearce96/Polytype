@@ -103,10 +103,19 @@ public final class UsageMeter: @unchecked Sendable {
     }
 
     /// Set the counter to a known-exact value and renewal date (from the user).
+    /// The stored reset is normalized to the start of the given day and advanced
+    /// forward whole months until it is strictly in the future — so a today/past
+    /// date can never immediately roll over and wipe the value being set.
     public func calibrate(used chars: Int, nextReset date: Date) {
         lock.lock(); defer { lock.unlock() }
+        let cal = Calendar(identifier: .gregorian)
+        var next = cal.startOfDay(for: date)
+        let current = now()
+        while next <= current {
+            next = cal.date(byAdding: .month, value: 1, to: next) ?? next.addingTimeInterval(2_592_000)
+        }
         store.setInt(max(0, chars), Key.used)
-        store.setDouble(date.timeIntervalSinceReferenceDate, Key.nextReset)
+        store.setDouble(next.timeIntervalSinceReferenceDate, Key.nextReset)
         store.setBool(false, Key.notified)
     }
 }

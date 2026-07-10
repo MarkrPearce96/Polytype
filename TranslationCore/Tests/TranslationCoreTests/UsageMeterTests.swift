@@ -74,4 +74,12 @@ final class UsageMeterTests: XCTestCase {
         let m = meter(Clock(date(2026, 7, 10)))
         XCTAssertEqual(m.nextResetDate, date(2026, 8, 1))
     }
+
+    func testCalibrateWithTodayKeepsUsageAndPicksFutureReset() {
+        let today = date(2026, 7, 10)
+        let m = UsageMeter(store: FakeStore(), now: { today })
+        m.calibrate(used: 42_000, nextReset: today)   // "today" must NOT wipe the value
+        XCTAssertEqual(m.used, 42_000)
+        XCTAssertEqual(m.nextResetDate, date(2026, 8, 10))   // advanced to a future date
+    }
 }

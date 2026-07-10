@@ -14,6 +14,13 @@ struct SettingsView: View {
     @State private var usageInput: String = ""
     @State private var renewDate: Date = Date()   // seeded from the meter in .onAppear
 
+    /// The renewal date must be a future day (a today/past date would roll over
+    /// immediately and wipe the entered usage).
+    private var minRenewDate: Date {
+        let cal = Calendar(identifier: .gregorian)
+        return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: Date())) ?? Date().addingTimeInterval(86_400)
+    }
+
     /// The app's blue→violet identity gradient (matches the icon).
     private var brand: LinearGradient {
         LinearGradient(
@@ -84,7 +91,7 @@ struct SettingsView: View {
                     LabeledContent("Current usage") {
                         TextField("e.g. 42000", text: $usageInput).frame(width: 130)
                     }
-                    DatePicker("Renews on", selection: $renewDate, in: Date()..., displayedComponents: .date)
+                    DatePicker("Renews on", selection: $renewDate, in: minRenewDate..., displayedComponents: .date)
                     Button("Update usage & renewal") {
                         let digits = usageInput.filter(\.isNumber)
                         guard let count = Int(digits), let meter = MeterAccess.meter else {
