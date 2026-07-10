@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var composeDisplay: String = HotkeyAccess.compose?.display ?? "⌥⌘T"
     @State private var readDisplay: String = HotkeyAccess.read?.display ?? "⌥⌘R"
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
+    @State private var usageInput: String = ""
+    @State private var renewDate: Date = Date()   // seeded from the meter in .onAppear
 
     /// The app's blue→violet identity gradient (matches the icon).
     private var brand: LinearGradient {
@@ -76,6 +78,23 @@ struct SettingsView: View {
                             NSWorkspace.shared.open(url)
                         }
                     }
+                    Divider()
+                    Text("Match this to your Google account: enter this month's exact character count and the date it renews.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    LabeledContent("Current usage") {
+                        TextField("e.g. 42000", text: $usageInput).frame(width: 130)
+                    }
+                    DatePicker("Renews on", selection: $renewDate, in: Date()..., displayedComponents: .date)
+                    Button("Update usage & renewal") {
+                        let digits = usageInput.filter(\.isNumber)
+                        guard let count = Int(digits), let meter = MeterAccess.meter else {
+                            status = "Enter a whole number for current usage."
+                            return
+                        }
+                        meter.calibrate(used: count, nextReset: renewDate)
+                        usageInput = ""
+                        status = "Usage set to \(count.formatted()); renews \(MeterAccess.resetDateString())."
+                    }
                 }
 
                 Section("Startup") {
@@ -95,7 +114,10 @@ struct SettingsView: View {
             footer
         }
         .frame(width: 460, height: 540)
-        .onAppear { key = secrets.get(googleKeyName) ?? "" }
+        .onAppear {
+            key = secrets.get(googleKeyName) ?? ""
+            renewDate = MeterAccess.meter?.nextResetDate ?? Date()
+        }
     }
 
     private var header: some View {
