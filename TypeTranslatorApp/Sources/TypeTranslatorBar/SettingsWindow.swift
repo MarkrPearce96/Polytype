@@ -65,7 +65,7 @@ struct SettingsView: View {
                 Button("Download zh-TW pack") {
                     Task {
                         if #available(macOS 15, *) {
-                            _ = try? await AppleEngine().translate("hello", to: "zh-TW")
+                            _ = try? await AppleEngine().translate("hello", from: "en", to: "zh-TW")
                         }
                         status = "If macOS prompts, allow the language download. "
                                + "This enables offline translation."

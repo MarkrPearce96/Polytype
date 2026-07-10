@@ -14,11 +14,16 @@ public final class DeepLEngine: TranslationEngine {
         target.lowercased().hasPrefix("zh") ? "ZH-HANT" : target.uppercased()
     }
 
-    public func translate(_ english: String, to target: String) async throws -> String {
+    /// Maps our source locale to DeepL's language code.
+    private func deepLSource(_ code: String) -> String {
+        code.lowercased().hasPrefix("zh") ? "ZH" : code.uppercased()
+    }
+
+    public func translate(_ text: String, from source: String, to target: String) async throws -> String {
         guard let key = secrets.get(deepLKeyName), !key.isEmpty else { throw TranslationError.noAPIKey }
         let url = URL(string: "https://\(host)/v2/translate")!
         let headers = ["Authorization": "DeepL-Auth-Key \(key)"]
-        let form = ["text": english, "source_lang": "EN", "target_lang": deepLTarget(target)]
+        let form = ["text": text, "source_lang": deepLSource(source), "target_lang": deepLTarget(target)]
 
         let resp: HTTPResponse
         do { resp = try await http.post(url: url, headers: headers, form: form) }

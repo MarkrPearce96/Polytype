@@ -24,7 +24,7 @@ final class GoogleEngineTests: XCTestCase {
     func testSuccessParsesTranslation() async throws {
         let http = MockHTTP(.success(HTTPResponse(status: 200, body: okBody("你好嗎"))))
         let engine = GoogleEngine(secrets: secrets("k"), http: http)
-        let out = try await engine.translate("how are you", to: "zh-TW")
+        let out = try await engine.translate("how are you", from: "en", to: "zh-TW")
         XCTAssertEqual(out, "你好嗎")
     }
 
@@ -32,7 +32,7 @@ final class GoogleEngineTests: XCTestCase {
         // Google HTML-escapes output even in text mode.
         let http = MockHTTP(.success(HTTPResponse(status: 200, body: okBody("it&#39;s a &quot;test&quot; &amp; more"))))
         let engine = GoogleEngine(secrets: secrets("k"), http: http)
-        let out = try await engine.translate("x", to: "zh-TW")
+        let out = try await engine.translate("x", from: "en", to: "zh-TW")
         XCTAssertEqual(out, "it's a \"test\" & more")
     }
 
@@ -43,7 +43,7 @@ final class GoogleEngineTests: XCTestCase {
     func testSendsCorrectRequest() async throws {
         let http = MockHTTP(.success(HTTPResponse(status: 200, body: okBody("嗨"))))
         let engine = GoogleEngine(secrets: secrets("SECRET"), http: http)
-        _ = try await engine.translate("hi", to: "zh-TW")
+        _ = try await engine.translate("hi", from: "en", to: "zh-TW")
         XCTAssertEqual(http.lastURL?.absoluteString, "https://translation.googleapis.com/language/translate/v2")
         XCTAssertEqual(http.lastForm["target"], "zh-TW")
         XCTAssertEqual(http.lastForm["source"], "en")
@@ -54,7 +54,7 @@ final class GoogleEngineTests: XCTestCase {
 
     func testNoKeyThrows() async {
         let engine = GoogleEngine(secrets: secrets(nil), http: MockHTTP(.success(HTTPResponse(status: 200, body: Data()))))
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             XCTAssertEqual($0 as? TranslationError, .noAPIKey)
         }
     }
@@ -62,7 +62,7 @@ final class GoogleEngineTests: XCTestCase {
     func testQuotaExceededThrows() async {
         let http = MockHTTP(.success(HTTPResponse(status: 429, body: Data())))
         let engine = GoogleEngine(secrets: secrets("k"), http: http)
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             XCTAssertEqual($0 as? TranslationError, .quotaExceeded)
         }
     }
@@ -72,7 +72,7 @@ final class GoogleEngineTests: XCTestCase {
         // FallbackChain moves on to the next engine.
         let http = MockHTTP(.success(HTTPResponse(status: 403, body: Data())))
         let engine = GoogleEngine(secrets: secrets("k"), http: http)
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             XCTAssertEqual($0 as? TranslationError, .http(403))
         }
     }
@@ -80,7 +80,7 @@ final class GoogleEngineTests: XCTestCase {
     func testEmptyBodyThrowsEmpty() async {
         let http = MockHTTP(.success(HTTPResponse(status: 200, body: "{}".data(using: .utf8)!)))
         let engine = GoogleEngine(secrets: secrets("k"), http: http)
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             XCTAssertEqual($0 as? TranslationError, .empty)
         }
     }
@@ -88,8 +88,17 @@ final class GoogleEngineTests: XCTestCase {
     func testNetworkErrorThrows() async {
         struct Boom: Error {}
         let engine = GoogleEngine(secrets: secrets("k"), http: MockHTTP(.failure(Boom())))
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             guard case .network = ($0 as? TranslationError) else { return XCTFail("expected .network") }
         }
+    }
+
+    func testReverseDirectionRequest() async throws {
+        let http = MockHTTP(.success(HTTPResponse(status: 200, body: okBody("how are you"))))
+        let engine = GoogleEngine(secrets: secrets("k"), http: http)
+        _ = try await engine.translate("你好嗎", from: "zh-TW", to: "en")
+        XCTAssertEqual(http.lastForm["source"], "zh-TW")
+        XCTAssertEqual(http.lastForm["target"], "en")
+        XCTAssertEqual(http.lastForm["q"], "你好嗎")
     }
 }

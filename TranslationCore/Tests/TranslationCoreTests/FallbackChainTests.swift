@@ -15,23 +15,31 @@ final class Box<T>: @unchecked Sendable {
 
 final class FallbackChainTests: XCTestCase {
     func testUsesPrimaryWhenHealthy() async throws {
-        let chain = FallbackChain(primary: StubEngine(result: .success("DEEPL")),
+        let lastSource = Box<String?>(nil)
+        let lastTarget = Box<String?>(nil)
+        let primary = StubEngine(result: .success("DEEPL")) { _, source, target in
+            lastSource.value = source
+            lastTarget.value = target
+        }
+        let chain = FallbackChain(primary: primary,
                                   fallback: StubEngine(result: .success("APPLE")))
-        let out = try await chain.translate("hi", to: "zh-TW")
+        let out = try await chain.translate("hi", from: "en", to: "zh-TW")
         XCTAssertEqual(out, "DEEPL")
+        XCTAssertEqual(lastSource.value, "en")
+        XCTAssertEqual(lastTarget.value, "zh-TW")
     }
 
     func testFallsBackOnPrimaryFailure() async throws {
         let chain = FallbackChain(primary: StubEngine(result: .failure(.quotaExceeded)),
                                   fallback: StubEngine(result: .success("APPLE")))
-        let out = try await chain.translate("hi", to: "zh-TW")
+        let out = try await chain.translate("hi", from: "en", to: "zh-TW")
         XCTAssertEqual(out, "APPLE")
     }
 
     func testFallsBackOnNoKey() async throws {
         let chain = FallbackChain(primary: StubEngine(result: .failure(.noAPIKey)),
                                   fallback: StubEngine(result: .success("APPLE")))
-        let out = try await chain.translate("hi", to: "zh-TW")
+        let out = try await chain.translate("hi", from: "en", to: "zh-TW")
         XCTAssertEqual(out, "APPLE")
     }
 
@@ -40,14 +48,14 @@ final class FallbackChainTests: XCTestCase {
                                   fallback: StubEngine(result: .success("APPLE")))
         let reported = Box<TranslationError?>(nil)
         chain.onFallback = { reported.value = $0 }
-        _ = try await chain.translate("hi", to: "zh-TW")
+        _ = try await chain.translate("hi", from: "en", to: "zh-TW")
         XCTAssertEqual(reported.value, .quotaExceeded)
     }
 
     func testPropagatesWhenBothFail() async {
         let chain = FallbackChain(primary: StubEngine(result: .failure(.quotaExceeded)),
                                   fallback: StubEngine(result: .failure(.empty)))
-        await XCTAssertThrowsErrorAsync(try await chain.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await chain.translate("hi", from: "en", to: "zh-TW")) {
             XCTAssertEqual($0 as? TranslationError, .empty)
         }
     }

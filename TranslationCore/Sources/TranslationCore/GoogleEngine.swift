@@ -14,18 +14,18 @@ public final class GoogleEngine: TranslationEngine {
         self.secrets = secrets; self.http = http; self.host = host
     }
 
-    /// Google's language code for Taiwanese Traditional Chinese is `zh-TW`.
-    private func googleTarget(_ target: String) -> String {
-        target.lowercased().hasPrefix("zh") ? "zh-TW" : target
+    /// Google's language codes: any Chinese variant → Traditional (Taiwan); others pass through.
+    private func googleLang(_ code: String) -> String {
+        code.lowercased().hasPrefix("zh") ? "zh-TW" : code
     }
 
-    public func translate(_ english: String, to target: String) async throws -> String {
+    public func translate(_ text: String, from source: String, to target: String) async throws -> String {
         guard let key = secrets.get(googleKeyName), !key.isEmpty else { throw TranslationError.noAPIKey }
         let url = URL(string: "https://\(host)/language/translate/v2")!
         let form = [
-            "q": english,
-            "source": "en",
-            "target": googleTarget(target),
+            "q": text,
+            "source": googleLang(source),
+            "target": googleLang(target),
             "format": "text",
             "key": key,
         ]
@@ -48,10 +48,10 @@ public final class GoogleEngine: TranslationEngine {
             let data: DataField
         }
         guard let payload = try? JSONDecoder().decode(Payload.self, from: resp.body),
-              let text = payload.data.translations.first?.translatedText, !text.isEmpty else {
+              let translated = payload.data.translations.first?.translatedText, !translated.isEmpty else {
             throw TranslationError.empty
         }
-        return Self.unescapeHTML(text)
+        return Self.unescapeHTML(translated)
     }
 
     /// The v2 API HTML-escapes its output even in `format=text` mode (a

@@ -95,7 +95,7 @@ final class TranslateService {
         Task { @MainActor in
             do {
                 self.fallbackFlag.value = false   // reset before the call
-                let mandarin = try await self.engine.translate(english, to: self.target)
+                let mandarin = try await self.engine.translate(english, from: "en", to: self.target)
                 guard !mandarin.isEmpty else {
                     self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
                     return

@@ -22,7 +22,7 @@ final class DeepLEngineTests: XCTestCase {
         let json = #"{"translations":[{"text":"你好嗎"}]}"#.data(using: .utf8)!
         let http = MockHTTP(.success(HTTPResponse(status: 200, body: json)))
         let engine = DeepLEngine(secrets: secrets("k"), http: http)
-        let out = try await engine.translate("how are you", to: "zh-TW")
+        let out = try await engine.translate("how are you", from: "en", to: "zh-TW")
         XCTAssertEqual(out, "你好嗎")
     }
 
@@ -30,7 +30,7 @@ final class DeepLEngineTests: XCTestCase {
         let json = #"{"translations":[{"text":"嗨"}]}"#.data(using: .utf8)!
         let http = MockHTTP(.success(HTTPResponse(status: 200, body: json)))
         let engine = DeepLEngine(secrets: secrets("SECRET"), http: http)
-        _ = try await engine.translate("hi", to: "zh-TW")
+        _ = try await engine.translate("hi", from: "en", to: "zh-TW")
         XCTAssertEqual(http.lastURL?.absoluteString, "https://api-free.deepl.com/v2/translate")
         XCTAssertEqual(http.lastHeaders["Authorization"], "DeepL-Auth-Key SECRET")
         XCTAssertEqual(http.lastForm["target_lang"], "ZH-HANT")
@@ -40,7 +40,7 @@ final class DeepLEngineTests: XCTestCase {
 
     func testNoKeyThrows() async {
         let engine = DeepLEngine(secrets: secrets(nil), http: MockHTTP(.success(HTTPResponse(status: 200, body: Data()))))
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             XCTAssertEqual($0 as? TranslationError, .noAPIKey)
         }
     }
@@ -48,7 +48,7 @@ final class DeepLEngineTests: XCTestCase {
     func testQuotaExceededThrows() async {
         let http = MockHTTP(.success(HTTPResponse(status: 456, body: Data())))
         let engine = DeepLEngine(secrets: secrets("k"), http: http)
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             XCTAssertEqual($0 as? TranslationError, .quotaExceeded)
         }
     }
@@ -57,7 +57,7 @@ final class DeepLEngineTests: XCTestCase {
         struct Boom: Error {}
         let http = MockHTTP(.failure(Boom()))
         let engine = DeepLEngine(secrets: secrets("k"), http: http)
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             guard case .network = ($0 as? TranslationError) else { return XCTFail("expected .network") }
         }
     }
@@ -65,7 +65,7 @@ final class DeepLEngineTests: XCTestCase {
     func testServerErrorThrowsHTTPStatus() async {
         let http = MockHTTP(.success(HTTPResponse(status: 500, body: Data())))
         let engine = DeepLEngine(secrets: secrets("k"), http: http)
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             XCTAssertEqual($0 as? TranslationError, .http(500))
         }
     }
@@ -73,7 +73,7 @@ final class DeepLEngineTests: XCTestCase {
     func testEmptyBodyThrowsEmpty() async {
         let http = MockHTTP(.success(HTTPResponse(status: 200, body: "{}".data(using: .utf8)!)))
         let engine = DeepLEngine(secrets: secrets("k"), http: http)
-        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", to: "zh-TW")) {
+        await XCTAssertThrowsErrorAsync(try await engine.translate("hi", from: "en", to: "zh-TW")) {
             XCTAssertEqual($0 as? TranslationError, .empty)
         }
     }

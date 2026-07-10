@@ -21,10 +21,10 @@ import AppKit
 public final class AppleEngine: TranslationEngine, @unchecked Sendable {
     public init() {}
 
-    public func translate(_ english: String, to target: String) async throws -> String {
+    public func translate(_ text: String, from source: String, to target: String) async throws -> String {
         let config = TranslationSession.Configuration(
-            source: Locale.Language(identifier: "en"),
-            target: Locale.Language(identifier: target)  // e.g. "zh-TW"
+            source: Locale.Language(identifier: source),
+            target: Locale.Language(identifier: target)
         )
         do {
             let session = try await SessionProvider.session(for: config)
@@ -42,7 +42,7 @@ public final class AppleEngine: TranslationEngine, @unchecked Sendable {
                 seconds: SessionProvider.sessionTimeout,
                 onTimeout: { TranslationError.network("apple: translate timeout") }
             ) {
-                try await session.translate(english).targetText
+                try await session.translate(text).targetText
             }
             guard !targetText.isEmpty else { throw TranslationError.empty }
             return targetText
@@ -224,7 +224,7 @@ private struct TranslationBridgeView: View {
 /// `FallbackChain` still has a well-typed engine to call.
 public final class AppleEngine: TranslationEngine, @unchecked Sendable {
     public init() {}
-    public func translate(_ english: String, to target: String) async throws -> String {
+    public func translate(_ text: String, from source: String, to target: String) async throws -> String {
         throw TranslationError.network("Translation framework unavailable")
     }
 }

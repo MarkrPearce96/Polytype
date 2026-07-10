@@ -10,12 +10,11 @@ public final class FallbackChain: TranslationEngine, @unchecked Sendable {
         self.primary = primary; self.fallback = fallback
     }
 
-    public func translate(_ english: String, to target: String) async throws -> String {
-        do {
-            return try await primary.translate(english, to: target)
-        } catch let error as TranslationError {
+    public func translate(_ text: String, from source: String, to target: String) async throws -> String {
+        do { return try await primary.translate(text, from: source, to: target) }
+        catch let error as TranslationError {
             onFallback?(error)
-            return try await fallback.translate(english, to: target)
+            return try await fallback.translate(text, from: source, to: target)
         }
     }
 }
