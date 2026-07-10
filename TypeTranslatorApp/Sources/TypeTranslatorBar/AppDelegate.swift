@@ -129,6 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         usageItem.view = buildUsageView()
         menu.addItem(usageItem)
         menu.addItem(.separator())
+        let setupItem = NSMenuItem(title: "Setup Assistant…", action: #selector(openSetup), keyEquivalent: "")
+        setupItem.image = symbol("sparkles")
+        menu.addItem(setupItem)
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.image = symbol("gearshape")
         menu.addItem(settingsItem)
@@ -155,7 +158,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         readHotkey.register()
 
         // Ask for Accessibility up front so the first hotkey press isn't a no-op.
-        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        // First-run users get this from the setup wizard's Accessibility step instead,
+        // so we don't show two prompts back to back.
+        if SetupState.completed {
+            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        }
 
         refreshLanguageMenus()
         updateEngineStatus()
@@ -167,6 +174,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         networkMonitor.start()
 
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+
+        if !SetupState.completed {
+            SetupWindowController.shared.show()
+        }
     }
 
     /// First time the monthly cap is hit, tell the user we've switched to Apple.
@@ -243,6 +254,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         SettingsWindowController.shared.show()
+    }
+
+    @objc private func openSetup() {
+        SetupWindowController.shared.show()
     }
 
     @objc private func quit() {
