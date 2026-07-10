@@ -85,11 +85,12 @@ struct SettingsView: View {
                             NSWorkspace.shared.open(url)
                         }
                     }
-                    Divider()
                     Text("Match this to your Google account: enter this month's exact character count and the date it renews.")
                         .font(.caption).foregroundStyle(.secondary)
                     LabeledContent("Current usage") {
-                        TextField("e.g. 42000", text: $usageInput).frame(width: 130)
+                        TextField("e.g. 42000", text: $usageInput)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 150)
                     }
                     DatePicker("Renews on", selection: $renewDate, in: minRenewDate..., displayedComponents: .date)
                     Button("Update usage & renewal") {
