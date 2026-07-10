@@ -102,9 +102,10 @@ final class TranslateService {
                 pb.clearContents()
                 pb.setString(mandarin, forType: .string)
                 self.postCommandKey(CGKeyCode(kVK_ANSI_V))   // paste Mandarin
-                self.onEngineUsed?(self.fallbackFlag.value ? "Apple (offline)" : "Google")
+                self.onEngineUsed?(self.fallbackFlag.value ? "apple" : "google")
                 self.finish(status: "✓", restore: saved, to: pb, after: 0.4)
             } catch {
+                self.onEngineUsed?("failed")
                 self.finish(status: "⚠", restore: saved, to: pb, after: 0.1)
             }
         }
@@ -139,14 +140,17 @@ final class TranslateService {
             }
             Task { @MainActor in
                 do {
+                    self.fallbackFlag.value = false   // reset before the call
                     let english = try await self.engine.translate(chinese, from: LanguagePrefs.readSourceCode, to: "en")
                     ResultPopup.shared.show(english.isEmpty ? "(no translation)" : english, at: cursor)
+                    self.onEngineUsed?(self.fallbackFlag.value ? "apple" : "google")
                     self.finishRead(status: "✓", restore: saved, to: pb)
                 } catch {
                     let hint = LanguagePrefs.readSourceCode == Languages.autoCode
                         ? "Couldn't translate. If you're offline, pick a Read language in the menu."
                         : "Couldn't translate — check your connection, or download this language in Settings for offline use."
                     ResultPopup.shared.show(hint, at: cursor)
+                    self.onEngineUsed?("failed")
                     self.finishRead(status: "⚠", restore: saved, to: pb)
                 }
             }

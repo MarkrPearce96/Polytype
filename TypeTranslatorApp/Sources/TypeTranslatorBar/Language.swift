@@ -46,4 +46,12 @@ enum LanguagePrefs {
         get { defaults.string(forKey: "readSourceCode") ?? Languages.autoCode }
         set { defaults.set(newValue, forKey: "readSourceCode") }
     }
+
+    /// The last *specific* (non-auto) Read language the user picked — used offline,
+    /// where auto-detect isn't available. Falls back to the compose target, since
+    /// you most likely read the language you're also writing.
+    static var lastSpecificReadCode: String {
+        get { defaults.string(forKey: "lastSpecificReadCode") ?? composeTargetCode }
+        set { defaults.set(newValue, forKey: "lastSpecificReadCode") }
+    }
 }

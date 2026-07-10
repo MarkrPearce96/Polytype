@@ -5,7 +5,11 @@ import TranslationCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var lastEngineItem: NSMenuItem!
+    private var engineDotView: NSView!
+    private var engineLabel: NSTextField!
+    private var lastEngineUsed: String?
+    private let networkMonitor = NetworkMonitor()
+    private var autoOverriddenForOffline = false
     private var translateItem: NSMenuItem!
     private var service: TranslateService!
     private let defaultTitle = "譯"
@@ -14,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var readItem: NSMenuItem!
     private var composeLangMenu: NSMenu!
     private var readLangMenu: NSMenu!
+    private var composeStatusLabel: NSTextField!
+    private var readStatusLabel: NSTextField!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Google Cloud Translation primary (free 500k chars/month), Apple
@@ -56,12 +62,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
+
+        // Header: identity + a live at-a-glance summary of both directions.
+        let headerItem = NSMenuItem()
+        headerItem.view = buildMenuHeader()
+        menu.addItem(headerItem)
+        menu.addItem(.separator())
+
+        // Actions (language shown in the header, so titles stay short).
         translateItem = NSMenuItem(title: "Translate what I typed  (\(composeHotkey.display))",
                                    action: #selector(translateNow), keyEquivalent: "")
+        translateItem.image = symbol("character.cursor.ibeam")
         menu.addItem(translateItem)
-        readItem = NSMenuItem(title: "Translate selection to English  (\(readHotkey.display))",
+        readItem = NSMenuItem(title: "Read selection  (\(readHotkey.display))",
                               action: #selector(readNow), keyEquivalent: "")
+        readItem.image = symbol("text.viewfinder")
         menu.addItem(readItem)
+
+        menu.addItem(.separator())
 
         composeLangMenu = NSMenu()
         for lang in Languages.all {
@@ -71,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             composeLangMenu.addItem(item)
         }
         let composeLangItem = NSMenuItem(title: "Compose language", action: nil, keyEquivalent: "")
+        composeLangItem.image = symbol("globe")
         composeLangItem.submenu = composeLangMenu
         menu.addItem(composeLangItem)
 
@@ -79,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autoItem.representedObject = Languages.autoCode
         autoItem.target = self
         readLangMenu.addItem(autoItem)
+        readLangMenu.addItem(.separator())
         for lang in Languages.all {
             let item = NSMenuItem(title: lang.name, action: #selector(selectReadLanguage(_:)), keyEquivalent: "")
             item.representedObject = lang.code
@@ -86,22 +106,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             readLangMenu.addItem(item)
         }
         let readLangItem = NSMenuItem(title: "Read language", action: nil, keyEquivalent: "")
+        readLangItem.image = symbol("character.bubble")
         readLangItem.submenu = readLangMenu
         menu.addItem(readLangItem)
 
         menu.addItem(.separator())
-        lastEngineItem = NSMenuItem(title: "Last translation: —", action: nil, keyEquivalent: "")
-        lastEngineItem.isEnabled = false
-        menu.addItem(lastEngineItem)
+        let engineStatusItem = NSMenuItem()
+        engineStatusItem.view = buildEngineStatusView()
+        menu.addItem(engineStatusItem)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Type Translator", action: #selector(quit), keyEquivalent: "q")
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.image = symbol("gearshape")
+        menu.addItem(settingsItem)
+        let quitItem = NSMenuItem(title: "Quit Type Translator", action: #selector(quit), keyEquivalent: "q")
+        quitItem.image = symbol("power")
+        menu.addItem(quitItem)
         for item in menu.items where item.action != nil { item.target = self }
+        menu.delegate = self
         statusItem.menu = menu
 
         service.onEngineUsed = { [weak self] name in
-            self?.lastEngineItem.title = "Last translation: \(name)"
+            self?.lastEngineUsed = name
+            self?.updateEngineStatus()
         }
 
         // Global hotkeys (defaults ⌥⌘T / ⌥⌘R; changeable in Settings).
@@ -117,6 +143,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
 
         refreshLanguageMenus()
+        updateEngineStatus()
+
+        // Offline, auto-detect Read can't work (Apple can't detect a language), so
+        // switch to a specific language while offline and restore auto when back.
+        networkMonitor.onChange = { [weak self] online in self?.handleNetworkChange(online: online) }
+        networkMonitor.start()
+    }
+
+    private func handleNetworkChange(online: Bool) {
+        if !online {
+            if LanguagePrefs.readSourceCode == Languages.autoCode {
+                LanguagePrefs.readSourceCode = LanguagePrefs.lastSpecificReadCode
+                autoOverriddenForOffline = true
+                refreshLanguageMenus()
+            }
+        } else if autoOverriddenForOffline {
+            LanguagePrefs.readSourceCode = Languages.autoCode
+            autoOverriddenForOffline = false
+            refreshLanguageMenus()
+        }
     }
 
     /// Put our colored app icon in the menu bar. Returns false if the image
@@ -161,11 +207,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func selectReadLanguage(_ sender: NSMenuItem) {
         guard let code = sender.representedObject as? String else { return }
         LanguagePrefs.readSourceCode = code
+        if code != Languages.autoCode { LanguagePrefs.lastSpecificReadCode = code }
+        autoOverriddenForOffline = false   // deliberate choice — stop auto-switching this cycle
         refreshLanguageMenus()
     }
 
-    /// Sync checkmarks and the compose/read menu-item titles to the current
-    /// selections. Also the single source of truth for those two titles.
+    /// Sync submenu checkmarks, the two action titles, and the header's live
+    /// direction summary to the current selections. Single source of truth for all.
     private func refreshLanguageMenus() {
         let compose = LanguagePrefs.composeTargetCode
         let read = LanguagePrefs.readSourceCode
@@ -175,7 +223,124 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in readLangMenu.items {
             item.state = (item.representedObject as? String == read) ? .on : .off
         }
-        translateItem.title = "Translate what I typed → \(Languages.name(for: compose))  (\(composeHotkey.display))"
-        readItem.title = "Read selection (\(Languages.name(for: read)))  (\(readHotkey.display))"
+        translateItem.title = "Translate what I typed  (\(composeHotkey.display))"
+        readItem.title = "Read selection  (\(readHotkey.display))"
+        composeStatusLabel?.stringValue = "Compose   English → \(shortLang(compose))"
+        readStatusLabel?.stringValue = "Read   \(shortLang(read)) → English"
+    }
+
+    /// Native display name without the trailing "(English name)" annotation.
+    private func shortLang(_ code: String) -> String {
+        let full = Languages.name(for: code)
+        return String(full.split(separator: " (").first ?? Substring(full))
+    }
+
+    /// A non-interactive status row: a colored dot (green = Google active,
+    /// gray = Apple on-device) plus a label. View-based so the dot stays vivid.
+    private func buildEngineStatusView() -> NSView {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 290, height: 24))
+
+        engineDotView = NSView()
+        engineDotView.wantsLayer = true
+        engineDotView.layer?.cornerRadius = 4.5
+        engineDotView.translatesAutoresizingMaskIntoConstraints = false
+
+        engineLabel = NSTextField(labelWithString: "")
+        engineLabel.font = .systemFont(ofSize: 12)
+        engineLabel.textColor = .secondaryLabelColor
+        engineLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(engineDotView)
+        container.addSubview(engineLabel)
+        NSLayoutConstraint.activate([
+            engineDotView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
+            engineDotView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            engineDotView.widthAnchor.constraint(equalToConstant: 9),
+            engineDotView.heightAnchor.constraint(equalToConstant: 9),
+            engineLabel.leadingAnchor.constraint(equalTo: engineDotView.trailingAnchor, constant: 8),
+            engineLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+        return container
+    }
+
+    /// Reflect the active translation engine: green + "Google" when Google is
+    /// in use (last translation used it, or a key is set and none has run yet),
+    /// gray + "Apple on-device" when the fallback is in effect or no key is set.
+    private func updateEngineStatus() {
+        let hasKey = !(KeychainSecretStore().get(googleKeyName) ?? "").isEmpty
+        let color: NSColor
+        let text: String
+        switch lastEngineUsed {
+        case "failed":
+            color = .systemOrange; text = "No connection"       // last attempt couldn't translate
+        case "apple":
+            color = .systemGray; text = "Apple on-device"       // Google fell back to Apple
+        default:
+            // "google", or nothing run yet: green when a key is set, else Apple-only.
+            if hasKey { color = .systemGreen; text = "Google — active" }
+            else      { color = .systemGray;  text = "Apple on-device" }
+        }
+        engineDotView?.layer?.backgroundColor = color.cgColor
+        engineLabel?.stringValue = text
+    }
+
+    /// A template SF Symbol sized for a menu-item icon.
+    private func symbol(_ name: String) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = true
+        return image
+    }
+
+    /// A non-interactive header view for the top of the menu: the brand globe,
+    /// the app name, and a live summary of the compose/read directions.
+    private func buildMenuHeader() -> NSView {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 290, height: 64))
+
+        let globe = NSImageView()
+        let config = NSImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
+        globe.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        globe.contentTintColor = NSColor(srgbRed: 122/255, green: 100/255, blue: 246/255, alpha: 1)
+        globe.translatesAutoresizingMaskIntoConstraints = false
+
+        let title = NSTextField(labelWithString: "Type Translator")
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+
+        composeStatusLabel = NSTextField(labelWithString: "")
+        composeStatusLabel.font = .systemFont(ofSize: 11)
+        composeStatusLabel.textColor = .secondaryLabelColor
+        readStatusLabel = NSTextField(labelWithString: "")
+        readStatusLabel.font = .systemFont(ofSize: 11)
+        readStatusLabel.textColor = .secondaryLabelColor
+
+        let textStack = NSStackView(views: [title, composeStatusLabel, readStatusLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 1
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(globe)
+        container.addSubview(textStack)
+        NSLayoutConstraint.activate([
+            globe.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            globe.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            globe.widthAnchor.constraint(equalToConstant: 26),
+            globe.heightAnchor.constraint(equalToConstant: 26),
+            textStack.leadingAnchor.constraint(equalTo: globe.trailingAnchor, constant: 11),
+            textStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            textStack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16),
+        ])
+        return container
+    }
+}
+
+extension AppDelegate: NSMenuDelegate {
+    // Refresh the engine light when the menu opens, so a just-saved API key shows
+    // as green without waiting for the next translation. Menus open on the main
+    // thread, so assuming main-actor isolation here is safe.
+    nonisolated func menuWillOpen(_ menu: NSMenu) {
+        MainActor.assumeIsolated { updateEngineStatus() }
     }
 }
