@@ -141,12 +141,12 @@ final class TranslateService {
             Task { @MainActor in
                 do {
                     self.fallbackFlag.value = false   // reset before the call
-                    let english = try await self.engine.translate(chinese, from: LanguagePrefs.readSourceCode, to: "en")
+                    let english = try await self.engine.translate(chinese, from: LanguagePrefs.effectiveReadSourceCode, to: "en")
                     ResultPopup.shared.show(english.isEmpty ? "(no translation)" : english, at: cursor)
                     self.onEngineUsed?(self.fallbackFlag.value ? "apple" : "google")
                     self.finishRead(status: "✓", restore: saved, to: pb)
                 } catch {
-                    let hint = LanguagePrefs.readSourceCode == Languages.autoCode
+                    let hint = LanguagePrefs.effectiveReadSourceCode == Languages.autoCode
                         ? "Couldn't translate. If you're offline, pick a Read language in the menu."
                         : "Couldn't translate — check your connection, or download this language in Settings for offline use."
                     ResultPopup.shared.show(hint, at: cursor)

@@ -54,4 +54,16 @@ enum LanguagePrefs {
         get { defaults.string(forKey: "lastSpecificReadCode") ?? composeTargetCode }
         set { defaults.set(newValue, forKey: "lastSpecificReadCode") }
     }
+
+    /// A temporary, in-memory override for the read source (never persisted). Set
+    /// while offline to translate from a specific language without touching the
+    /// user's saved `readSourceCode` preference — so quitting while offline can't
+    /// corrupt it. Cleared when back online.
+    static var readSourceOverride: String?
+
+    /// The read source actually used for translation: the offline override if set,
+    /// otherwise the saved preference.
+    static var effectiveReadSourceCode: String {
+        readSourceOverride ?? readSourceCode
+    }
 }

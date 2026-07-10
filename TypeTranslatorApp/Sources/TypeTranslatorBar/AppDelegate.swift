@@ -9,7 +9,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var engineLabel: NSTextField!
     private var lastEngineUsed: String?
     private let networkMonitor = NetworkMonitor()
-    private var autoOverriddenForOffline = false
     private var translateItem: NSMenuItem!
     private var service: TranslateService!
     private let defaultTitle = "譯"
@@ -153,16 +152,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleNetworkChange(online: Bool) {
         if !online {
+            // Offline: auto-detect can't work, so translate from the last specific
+            // language via a temporary override (the saved preference is untouched).
             if LanguagePrefs.readSourceCode == Languages.autoCode {
-                LanguagePrefs.readSourceCode = LanguagePrefs.lastSpecificReadCode
-                autoOverriddenForOffline = true
-                refreshLanguageMenus()
+                LanguagePrefs.readSourceOverride = LanguagePrefs.lastSpecificReadCode
             }
-        } else if autoOverriddenForOffline {
-            LanguagePrefs.readSourceCode = Languages.autoCode
-            autoOverriddenForOffline = false
-            refreshLanguageMenus()
+        } else {
+            // Back online: drop any offline override, and clear a stale failure so
+            // the light doesn't stay orange after connectivity returns.
+            LanguagePrefs.readSourceOverride = nil
+            if lastEngineUsed == "failed" { lastEngineUsed = nil }
         }
+        refreshLanguageMenus()
+        updateEngineStatus()
     }
 
     /// Put our colored app icon in the menu bar. Returns false if the image
@@ -207,8 +209,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func selectReadLanguage(_ sender: NSMenuItem) {
         guard let code = sender.representedObject as? String else { return }
         LanguagePrefs.readSourceCode = code
+        LanguagePrefs.readSourceOverride = nil   // deliberate choice wins over any offline override
         if code != Languages.autoCode { LanguagePrefs.lastSpecificReadCode = code }
-        autoOverriddenForOffline = false   // deliberate choice — stop auto-switching this cycle
         refreshLanguageMenus()
     }
 
@@ -216,7 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// direction summary to the current selections. Single source of truth for all.
     private func refreshLanguageMenus() {
         let compose = LanguagePrefs.composeTargetCode
-        let read = LanguagePrefs.readSourceCode
+        let read = LanguagePrefs.effectiveReadSourceCode
         for item in composeLangMenu.items {
             item.state = (item.representedObject as? String == compose) ? .on : .off
         }
@@ -268,17 +270,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// gray + "Apple on-device" when the fallback is in effect or no key is set.
     private func updateEngineStatus() {
         let hasKey = !(KeychainSecretStore().get(googleKeyName) ?? "").isEmpty
+        let online = networkMonitor.isOnline
         let color: NSColor
         let text: String
         switch lastEngineUsed {
         case "failed":
-            color = .systemOrange; text = "No connection"       // last attempt couldn't translate
+            // Distinguish "can't reach anything" from an online failure (bad key, etc.).
+            color = .systemOrange; text = online ? "Translation failed" : "No connection"
         case "apple":
-            color = .systemGray; text = "Apple on-device"       // Google fell back to Apple
+            color = .systemGray; text = "Apple on-device"          // working via the on-device engine
         default:
-            // "google", or nothing run yet: green when a key is set, else Apple-only.
-            if hasKey { color = .systemGreen; text = "Google — active" }
-            else      { color = .systemGray;  text = "Apple on-device" }
+            // "google", or nothing run yet.
+            if !hasKey       { color = .systemGray;   text = "Apple on-device" }   // no key → Apple only
+            else if !online  { color = .systemOrange; text = "No connection" }     // key set but offline
+            else             { color = .systemGreen;  text = "Google — active" }
         }
         engineDotView?.layer?.backgroundColor = color.cgColor
         engineLabel?.stringValue = text
