@@ -111,6 +111,58 @@ final class TranslateService {
         }
     }
 
+    /// Read mode: translate the current selection zh-TW → English and show it in a
+    /// popup near the cursor. Never pastes; restores the clipboard.
+    func translateSelectionToPopup() {
+        guard !busy else { return }
+        guard ensureAccessibility() else { onStatus?("⚠"); promptAccessibility(); return }
+        busy = true
+        onStatus?("…")
+        armWatchdog()
+
+        let pb = NSPasteboard.general
+        let saved = pb.string(forType: .string)
+        let cursor = NSEvent.mouseLocation
+        let before = pb.changeCount
+        postCommandKey(CGKeyCode(kVK_ANSI_C))   // copy selection only (no select-all)
+
+        waitForClipboardChange(pb, from: before, attempts: 12) { [weak self] hadSelection in
+            guard let self else { return }
+            guard hadSelection else {
+                NSSound.beep()
+                self.finishRead(status: "∅", restore: saved, to: pb)
+                return
+            }
+            let chinese = pb.string(forType: .string) ?? ""
+            guard !chinese.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                NSSound.beep()
+                self.finishRead(status: "∅", restore: saved, to: pb)
+                return
+            }
+            Task { @MainActor in
+                do {
+                    let english = try await self.engine.translate(chinese, from: "zh-TW", to: "en")
+                    ResultPopup.shared.show(english.isEmpty ? "(no translation)" : english, at: cursor)
+                    self.finishRead(status: "✓", restore: saved, to: pb)
+                } catch {
+                    ResultPopup.shared.show("Couldn't translate — check connection or API key.", at: cursor)
+                    self.finishRead(status: "⚠", restore: saved, to: pb)
+                }
+            }
+        }
+    }
+
+    /// Read mode never pastes, so restore the clipboard immediately.
+    private func finishRead(status: String, restore saved: String?, to pb: NSPasteboard) {
+        onStatus?(status)
+        pb.clearContents()
+        if let saved { pb.setString(saved, forType: .string) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.busy = false
+            self?.onStatus?("")
+        }
+    }
+
     /// Backstop: if a translation never completes (e.g. a framework stall beyond
     /// its own timeouts), force the app back to idle so the hotkey keeps working.
     private func armWatchdog() {

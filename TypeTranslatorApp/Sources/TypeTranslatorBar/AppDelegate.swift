@@ -110,9 +110,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.translateSelectionInPlace()
     }
 
-    /// Temporary stub — replaced with real read-translation behavior in Task 4.
     @objc private func readNow() {
-        ResultPopup.shared.show("Read hotkey works", at: NSEvent.mouseLocation)
+        service.translateSelectionToPopup()
     }
 
     @objc private func openSettings() {
