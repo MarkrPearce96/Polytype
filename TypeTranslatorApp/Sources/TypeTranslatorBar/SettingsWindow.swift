@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 import TranslationCore
 
-/// Preferences UI: enter a DeepL API key (stored in the Keychain) and download
-/// the on-device zh-TW language pack used by the offline fallback.
+/// Preferences UI: set the two shortcuts, the Google API key (stored in the
+/// Keychain), the login item, and reach macOS's offline-language downloads.
 struct SettingsView: View {
     private let secrets = KeychainSecretStore()
     @State private var key: String = ""
@@ -12,80 +12,115 @@ struct SettingsView: View {
     @State private var readDisplay: String = HotkeyAccess.read?.display ?? "⌥⌘R"
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
 
+    /// The app's blue→violet identity gradient (matches the icon).
+    private var brand: LinearGradient {
+        LinearGradient(
+            colors: [Color(red: 74/255, green: 125/255, blue: 1.0),
+                     Color(red: 150/255, green: 88/255, blue: 246/255)],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Type Translator").font(.headline)
-            Text("English → Taiwanese Mandarin (Traditional)")
-                .font(.subheadline).foregroundStyle(.secondary)
-
+        VStack(spacing: 0) {
+            header
             Divider()
+            Form {
+                Section("Shortcuts") {
+                    LabeledContent("Compose") {
+                        HotkeyRecorder(current: composeDisplay) { keyCode, mods, display in
+                            if HotkeyAccess.compose?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
+                                composeDisplay = display; status = "Compose shortcut set to \(display)."
+                            } else { status = "That shortcut is already in use — try another." }
+                        }.frame(width: 132, height: 24)
+                    }
+                    LabeledContent("Read") {
+                        HotkeyRecorder(current: readDisplay) { keyCode, mods, display in
+                            if HotkeyAccess.read?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
+                                readDisplay = display; status = "Read shortcut set to \(display)."
+                            } else { status = "That shortcut is already in use — try another." }
+                        }.frame(width: 132, height: 24)
+                    }
+                    caption("Click a field, then press the keys (include ⌘, ⌥, ⌃, or ⇧). Compose replaces your text in place; Read shows a popup. Pick languages from the menu-bar icon.")
+                }
 
-            HStack(spacing: 8) {
-                Text("Compose (English → 中):").font(.callout)
-                HotkeyRecorder(current: composeDisplay) { keyCode, mods, display in
-                    if HotkeyAccess.compose?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
-                        composeDisplay = display; status = "Compose shortcut set to \(display)."
-                    } else { status = "That shortcut is already in use — try another." }
-                }.frame(width: 150, height: 26)
-            }
-            HStack(spacing: 8) {
-                Text("Read (中 → English):").font(.callout)
-                HotkeyRecorder(current: readDisplay) { keyCode, mods, display in
-                    if HotkeyAccess.read?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
-                        readDisplay = display; status = "Read shortcut set to \(display)."
-                    } else { status = "That shortcut is already in use — try another." }
-                }.frame(width: 150, height: 26)
-            }
-            Text("Click a button, then press the keys you want (must include ⌘, ⌥, ⌃, or ⇧). "
-                 + "Compose translates what you typed in place; Read shows the English for selected foreign text in a popup. Choose languages from the menu-bar icon.")
-                .font(.caption).foregroundStyle(.secondary)
-
-            Divider()
-
-            Toggle("Launch at login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) { _, newValue in
-                    if let error = LoginItem.setEnabled(newValue) {
-                        status = error
-                        launchAtLogin = LoginItem.isEnabled   // reflect actual state
-                    } else {
-                        status = newValue ? "Will start automatically at login." : "Won't start at login."
+                Section("Translation") {
+                    LabeledContent("Google API key") {
+                        SecureField("Paste key…", text: $key)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 210)
+                    }
+                    caption("Free tier: 500,000 characters/month. Leave blank to use Apple's on-device translation only.")
+                    HStack {
+                        Button("Save key") {
+                            secrets.set(key.isEmpty ? nil : key, for: googleKeyName)
+                            status = key.isEmpty ? "Key cleared — using Apple on-device only."
+                                                 : "Key saved to Keychain."
+                        }
+                        Spacer()
+                        Button("Manage offline languages…") {
+                            // Apple's on-device (offline) translation uses the languages
+                            // in System Settings ▸ General ▸ Language & Region ▸
+                            // Translation Languages. Google (online) needs no downloads.
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                            status = "In Language & Region, open “Translation Languages” to download languages for offline use."
+                        }
                     }
                 }
 
-            Divider()
-
-            Text("Google Cloud Translation API key (free tier: 500,000 characters/month). "
-                 + "Leave blank to use Apple's on-device translation only.")
-                .font(.caption).foregroundStyle(.secondary)
-            SecureField("Google API key…", text: $key)
-                .textFieldStyle(.roundedBorder)
-
-            HStack {
-                Button("Save key") {
-                    secrets.set(key.isEmpty ? nil : key, for: googleKeyName)
-                    status = key.isEmpty
-                        ? "Key cleared — using Apple on-device only."
-                        : "Key saved to Keychain."
-                }
-                Button("Manage offline languages…") {
-                    // Apple's on-device (offline) translation uses the languages
-                    // managed in System Settings ▸ General ▸ Language & Region ▸
-                    // Translation Languages. Google (online) needs no downloads.
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") {
-                        NSWorkspace.shared.open(url)
-                    }
-                    status = "In Language & Region, open “Translation Languages” to "
-                           + "download languages for offline use. (Online, Google needs none.)"
+                Section("Startup") {
+                    Toggle("Launch at login", isOn: $launchAtLogin)
+                        .onChange(of: launchAtLogin) { _, newValue in
+                            if let error = LoginItem.setEnabled(newValue) {
+                                status = error
+                                launchAtLogin = LoginItem.isEnabled   // reflect actual state
+                            } else {
+                                status = newValue ? "Will start automatically at login." : "Won't start at login."
+                            }
+                        }
                 }
             }
+            .formStyle(.grouped)
 
-            if !status.isEmpty {
-                Text(status).font(.caption).foregroundStyle(.secondary)
-            }
+            footer
         }
-        .padding(20)
-        .frame(width: 440)
+        .frame(width: 460, height: 540)
         .onAppear { key = secrets.get(googleKeyName) ?? "" }
+    }
+
+    private var header: some View {
+        HStack(spacing: 13) {
+            Image(systemName: "globe")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(brand)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Type Translator").font(.title2.weight(.semibold))
+                Text("Translate as you type, in any app")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
+    }
+
+    @ViewBuilder private var footer: some View {
+        if status.isEmpty {
+            EmptyView()
+        } else {
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle").foregroundStyle(.secondary)
+                Text(status).font(.callout).foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 12)
+        }
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary)
     }
 }
 
