@@ -1,18 +1,20 @@
 # Type Translator
 
-A macOS menu-bar app that translates **English → Taiwanese Mandarin (Traditional
-Chinese, zh-TW)** in place. Type a message in any app, press a hotkey, and the
-text is replaced with the translation — ready to send.
+A macOS menu-bar app that translates text in place. Type a message in any app,
+press a hotkey, and the text is replaced with the translation — ready to send.
+Supports multiple languages with configurable source and target languages.
 
 ## How it works
 
-Press the hotkey (default **⌥⌘T**) and the app:
+Press the hotkey (default **⌥⌘T** for Compose, **⌥⌘R** for Read) and the app:
 
 1. Copies your current selection — or, if nothing is selected, selects-all and
    copies the field (ideal for a message you just typed).
-2. Translates it: **Google Cloud Translation** first, falling back to Apple's
-   **on-device** translation if Google is unreachable or has no key.
-3. Pastes the Traditional Chinese back in place, then restores your clipboard.
+2. Translates it using the selected language pair: **Google Cloud Translation**
+   first, falling back to Apple's **on-device** translation if Google is
+   unreachable or has no key.
+3. For Compose: pastes the translated text back in place, then restores your
+   clipboard. For Read: shows a popup with the translation (read-only).
 
 The menu shows which engine produced the last translation ("Last translation:
 Google" / "Apple (offline)").
@@ -56,13 +58,19 @@ which `install-bar.sh` handles.)
 ## Usage
 
 - **Compose a message** (⌥⌘T, default): type it, press the hotkey — the whole
-  field is translated to Traditional Chinese and pasted back.
-- **Existing document** (select first): **select** the Chinese or English text you
-  want translated, then press the hotkey — only the selection is replaced.
-- **Read a message** (⌥⌘R, default): select any Chinese text on your screen (in a
+  field is translated to your selected target language (default Traditional
+  Chinese) and pasted back. Change the target language in **譯 → Compose
+  language**.
+- **Existing document** (select first): **select** the text you want translated,
+  then press the hotkey — only the selection is replaced.
+- **Read a message** (⌥⌘R, default): select any text on your screen (in a
   message, web page, PDF, etc.), press the hotkey — a small popup near your cursor
-  shows the English translation. Nothing is changed or pasted; it's read-only. If
-  nothing is selected, the app beeps.
+  shows the English translation. Nothing is changed or pasted; it's read-only. Change
+  the source language in **譯 → Read language** (default Auto-detect, which requires
+  internet; pick a specific language to work fully offline). If nothing is selected,
+  the app beeps.
+- **Available languages:** Traditional Chinese, Simplified Chinese, Japanese,
+  Korean, Spanish, French, German, Thai, Vietnamese.
 - **Customize the hotkeys:** Both shortcuts are customizable in Settings → Shortcut
   — click and press a new combo (must include ⌘, ⌥, ⌃, or ⇧).
 
