@@ -77,6 +77,9 @@ which `install-bar.sh` handles.)
   monthly character count. The app automatically switches to Apple's on-device
   engine before reaching the 500k limit to prevent charges — you'll receive a
   one-time notification when it does. The counter resets each calendar month.
+- **Usage calibration**: In Settings, enter your exact current character count
+  (from the Google Cloud Console) and renewal date — the counter will then reset
+  on that date, rolling forward monthly.
 
 ## Project layout
 
