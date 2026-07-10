@@ -11,7 +11,7 @@ struct SettingsView: View {
     @State private var composeDisplay: String = HotkeyAccess.compose?.display ?? "⌥⌘T"
     @State private var readDisplay: String = HotkeyAccess.read?.display ?? "⌥⌘R"
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
-    @State private var usageInput: String = ""
+    @State private var usageInput: String = "0"   // seeded from the meter in .onAppear
     @State private var renewDate: Date = Date()   // seeded from the meter in .onAppear
 
     /// The renewal date must be a future day (a today/past date would roll over
@@ -100,7 +100,7 @@ struct SettingsView: View {
                             return
                         }
                         meter.calibrate(used: count, nextReset: renewDate)
-                        usageInput = ""
+                        usageInput = String(count)
                         status = "Usage set to \(count.formatted()); renews \(MeterAccess.resetDateString())."
                     }
                 }
@@ -125,6 +125,7 @@ struct SettingsView: View {
         .onAppear {
             key = secrets.get(googleKeyName) ?? ""
             renewDate = MeterAccess.meter?.nextResetDate ?? Date()
+            usageInput = String(MeterAccess.meter?.used ?? 0)   // 0 for a fresh setup
         }
     }
 
