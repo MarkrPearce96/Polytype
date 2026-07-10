@@ -21,6 +21,11 @@ Google" / "Apple (offline)").
 
 ## Setup
 
+On first launch, a **Setup Assistant** walks you through the steps below —
+Accessibility permission, your Google API key, your language, and your two
+shortcuts — and only appears once. You can reopen it anytime from **譯 → Setup
+Assistant…**. The manual steps below cover the same ground.
+
 ### 1. Build and install
 
 ```sh
