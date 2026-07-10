@@ -11,9 +11,12 @@ final class ResultPopup {
     private var dismissTimer: Timer?
     private var clickMonitor: Any?
     private var keyMonitor: Any?
+    private var generation = 0
 
     func show(_ text: String, at screenPoint: NSPoint) {
         dismiss()
+        generation += 1
+        let gen = generation
 
         let label = NSTextField(wrappingLabelWithString: text)
         label.font = .systemFont(ofSize: 14)
@@ -40,31 +43,48 @@ final class ResultPopup {
         let size = NSSize(width: max(120, fitting.width), height: max(40, fitting.height))
         let origin = clampedOrigin(for: size, near: screenPoint)
 
-        let panel = NSPanel(contentRect: NSRect(origin: origin, size: size),
+        let newPanel = NSPanel(contentRect: NSRect(origin: origin, size: size),
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.hasShadow = true
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hidesOnDeactivate = false
-        panel.contentView = container
-        panel.orderFrontRegardless()
-        self.panel = panel
+        newPanel.isFloatingPanel = true
+        newPanel.level = .floating
+        newPanel.hasShadow = true
+        newPanel.backgroundColor = .clear
+        newPanel.isOpaque = false
+        // Intentionally not dismissing on app deactivation: Type Translator is a
+        // non-activating background menu-bar app, so it's essentially never the
+        // "active" app and there's no meaningful deactivation event to key off
+        // of. The popup should stay visible while the user keeps working in the
+        // real target app, and is dismissed via Esc, a click elsewhere, or the
+        // auto-dismiss timeout below.
+        newPanel.hidesOnDeactivate = false
+        newPanel.contentView = container
+        newPanel.orderFrontRegardless()
+        self.panel = newPanel
 
         // Dismiss on a click anywhere.
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            Task { @MainActor in self?.dismiss() }
+            Task { @MainActor in
+                guard let self, self.generation == gen else { return }
+                self.dismiss()
+            }
         }
         // Dismiss on Esc (global monitor, since the panel is non-activating and
         // never becomes key). Requires Accessibility, which the app already has.
         keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            if event.keyCode == 53 { Task { @MainActor in self?.dismiss() } }   // 53 = Escape
+            if event.keyCode == 53 {   // 53 = Escape
+                Task { @MainActor in
+                    guard let self, self.generation == gen else { return }
+                    self.dismiss()
+                }
+            }
         }
         // Auto-dismiss fallback.
         dismissTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.dismiss() }
+            Task { @MainActor in
+                guard let self, self.generation == gen else { return }
+                self.dismiss()
+            }
         }
     }
 
