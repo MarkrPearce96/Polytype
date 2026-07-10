@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var readLangMenu: NSMenu!
     private var composeStatusLabel: NSTextField!
     private var readStatusLabel: NSTextField!
+    private var usageLabel: NSTextField!
+    private var usageBar: NSProgressIndicator!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Google Cloud Translation primary (free 500k chars/month), Apple
@@ -124,6 +126,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engineStatusItem.view = buildEngineStatusView()
         menu.addItem(engineStatusItem)
         menu.addItem(.separator())
+        let usageItem = NSMenuItem()
+        usageItem.view = buildUsageView()
+        menu.addItem(usageItem)
+        menu.addItem(.separator())
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.image = symbol("gearshape")
         menu.addItem(settingsItem)
@@ -137,6 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.onEngineUsed = { [weak self] name in
             self?.lastEngineUsed = name
             self?.updateEngineStatus()
+            self?.updateUsageDisplay()
         }
 
         // Global hotkeys (defaults ⌥⌘T / ⌥⌘R; changeable in Settings).
@@ -153,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         refreshLanguageMenus()
         updateEngineStatus()
+        updateUsageDisplay()
 
         // Offline, auto-detect Read can't work (Apple can't detect a language), so
         // switch to a specific language while offline and restore auto when back.
@@ -166,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleQuotaReached() {
         guard let meter = usageMeter, !meter.hasNotified else { return }
         meter.markNotified()
-        updateUsageDisplay()   // added in Task 4; safe no-op-ish until then
+        updateUsageDisplay()
 
         let content = UNMutableNotificationContent()
         content.title = "Google free limit reached"
@@ -175,7 +183,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UNUserNotificationCenter.current().add(request)
     }
 
-    private func updateUsageDisplay() {}   // TEMP — implemented in Task 4
+    private func updateUsageDisplay() {
+        guard let meter = usageMeter else { return }
+        let used = meter.used
+        usageBar?.maxValue = Double(meter.limit)
+        usageBar?.doubleValue = Double(min(used, meter.limit))
+        if used >= meter.cap {
+            usageLabel?.stringValue = "Free limit reached — on Apple until \(MeterAccess.resetDateString())"
+        } else {
+            usageLabel?.stringValue = "Usage  ≈\(shortCount(used)) / \(shortCount(meter.limit))"
+        }
+    }
+
+    /// Compact character count, e.g. 42300 → "42k".
+    private func shortCount(_ n: Int) -> String {
+        n >= 1000 ? "\(n / 1000)k" : "\(n)"
+    }
 
     private func handleNetworkChange(online: Bool) {
         if !online {
@@ -292,6 +315,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return container
     }
 
+    /// A non-interactive usage row: a label ("Usage ≈42k / 500k", or the capped
+    /// message once the free tier is exhausted) plus a determinate progress bar.
+    private func buildUsageView() -> NSView {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 290, height: 42))
+
+        usageLabel = NSTextField(labelWithString: "")
+        usageLabel.font = .systemFont(ofSize: 12)
+        usageLabel.textColor = .secondaryLabelColor
+        usageLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        usageBar = NSProgressIndicator()
+        usageBar.isIndeterminate = false
+        usageBar.style = .bar
+        usageBar.controlSize = .small
+        usageBar.minValue = 0
+        usageBar.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(usageLabel)
+        container.addSubview(usageBar)
+        NSLayoutConstraint.activate([
+            usageLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
+            usageLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 5),
+            usageLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16),
+            usageBar.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
+            usageBar.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            usageBar.topAnchor.constraint(equalTo: usageLabel.bottomAnchor, constant: 4),
+        ])
+        return container
+    }
+
     /// Reflect the active translation engine: green + "Google" when Google is
     /// in use (last translation used it, or a key is set and none has run yet),
     /// gray + "Apple on-device" when the fallback is in effect or no key is set.
@@ -373,6 +426,9 @@ extension AppDelegate: NSMenuDelegate {
     // as green without waiting for the next translation. Menus open on the main
     // thread, so assuming main-actor isolation here is safe.
     nonisolated func menuWillOpen(_ menu: NSMenu) {
-        MainActor.assumeIsolated { updateEngineStatus() }
+        MainActor.assumeIsolated {
+            updateEngineStatus()
+            updateUsageDisplay()
+        }
     }
 }
