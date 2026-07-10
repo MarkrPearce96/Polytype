@@ -145,6 +145,10 @@ final class TranslateService {
                 let (back, backEngineName) = await self.backTranslate(translated, from: target)
                 let fullName = Languages.name(for: target)
                 let shortName = String(fullName.split(separator: " (").first ?? Substring(fullName))
+                // Translation is done; we're now waiting on the user, which can
+                // outlast the 25s backstop. Disarm the watchdog and let the popup's
+                // own dismiss timer / onCancel be the backstop.
+                self.disarmWatchdog()
                 ComposePreviewPopup.shared.show(
                     original: english, translation: translated, languageName: shortName,
                     backTranslation: back, backEngine: backEngineName, at: cursor,
@@ -277,6 +281,13 @@ final class TranslateService {
                 self?.onStatus?("")
             }
         }
+    }
+
+    /// Cancel a pending watchdog by advancing the token so its armed check no-ops.
+    /// Used once the preview popup is on screen (translation complete; the wait is
+    /// now bounded by the popup's own dismiss timer instead).
+    private func disarmWatchdog() {
+        opToken += 1
     }
 
     // MARK: - Accessibility
