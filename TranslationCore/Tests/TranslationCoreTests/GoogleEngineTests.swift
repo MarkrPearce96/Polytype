@@ -101,4 +101,27 @@ final class GoogleEngineTests: XCTestCase {
         XCTAssertEqual(http.lastForm["target"], "en")
         XCTAssertEqual(http.lastForm["q"], "你好嗎")
     }
+
+    func testAutoDetectOmitsSource() async throws {
+        let http = MockHTTP(.success(HTTPResponse(status: 200, body: okBody("hello"))))
+        let engine = GoogleEngine(secrets: secrets("k"), http: http)
+        _ = try await engine.translate("你好", from: "auto", to: "en")
+        XCTAssertNil(http.lastForm["source"])            // omitted for auto-detect
+        XCTAssertEqual(http.lastForm["target"], "en")
+    }
+
+    func testTargetCodePassedThroughVerbatim() async throws {
+        let http = MockHTTP(.success(HTTPResponse(status: 200, body: okBody("こんにちは"))))
+        let engine = GoogleEngine(secrets: secrets("k"), http: http)
+        _ = try await engine.translate("hello", from: "en", to: "ja")
+        XCTAssertEqual(http.lastForm["target"], "ja")
+        XCTAssertEqual(http.lastForm["source"], "en")
+    }
+
+    func testSimplifiedNotCollapsedToTraditional() async throws {
+        let http = MockHTTP(.success(HTTPResponse(status: 200, body: okBody("电脑"))))
+        let engine = GoogleEngine(secrets: secrets("k"), http: http)
+        _ = try await engine.translate("computer", from: "en", to: "zh-CN")
+        XCTAssertEqual(http.lastForm["target"], "zh-CN")   // NOT forced to zh-TW
+    }
 }

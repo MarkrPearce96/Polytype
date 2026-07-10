@@ -22,6 +22,11 @@ public final class AppleEngine: TranslationEngine, @unchecked Sendable {
     public init() {}
 
     public func translate(_ text: String, from source: String, to target: String) async throws -> String {
+        // The on-device framework cannot auto-detect a language; offline Read must
+        // specify a source. Fail fast so FallbackChain surfaces it cleanly.
+        guard source != "auto" else {
+            throw TranslationError.network("apple: cannot auto-detect language")
+        }
         let config = TranslationSession.Configuration(
             source: Locale.Language(identifier: source),
             target: Locale.Language(identifier: target)

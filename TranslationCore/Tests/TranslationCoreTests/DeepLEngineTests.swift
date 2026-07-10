@@ -77,6 +77,14 @@ final class DeepLEngineTests: XCTestCase {
             XCTAssertEqual($0 as? TranslationError, .empty)
         }
     }
+
+    func testSimplifiedTargetMapsToZhHans() async throws {
+        let json = #"{"translations":[{"text":"电脑"}]}"#.data(using: .utf8)!
+        let http = MockHTTP(.success(HTTPResponse(status: 200, body: json)))
+        let engine = DeepLEngine(secrets: secrets("k"), http: http)
+        _ = try await engine.translate("computer", from: "en", to: "zh-CN")
+        XCTAssertEqual(http.lastForm["target_lang"], "ZH-HANS")
+    }
 }
 
 /// Async throwing assertion helper.

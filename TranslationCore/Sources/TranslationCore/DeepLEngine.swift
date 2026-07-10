@@ -9,9 +9,14 @@ public final class DeepLEngine: TranslationEngine {
         self.secrets = secrets; self.http = http; self.host = host
     }
 
-    /// Maps our target locale to DeepL's language code.
-    private func deepLTarget(_ target: String) -> String {
-        target.lowercased().hasPrefix("zh") ? "ZH-HANT" : target.uppercased()
+    /// Maps our target locale to DeepL's language code, distinguishing Traditional
+    /// (`ZH-HANT`) from Simplified (`ZH-HANS`) Chinese.
+    private func deepLTarget(_ code: String) -> String {
+        switch code.lowercased() {
+        case "zh-tw", "zh-hant": return "ZH-HANT"
+        case "zh-cn", "zh-hans": return "ZH-HANS"
+        default: return code.uppercased()
+        }
     }
 
     /// Maps our source locale to DeepL's language code.
@@ -23,7 +28,9 @@ public final class DeepLEngine: TranslationEngine {
         guard let key = secrets.get(deepLKeyName), !key.isEmpty else { throw TranslationError.noAPIKey }
         let url = URL(string: "https://\(host)/v2/translate")!
         let headers = ["Authorization": "DeepL-Auth-Key \(key)"]
-        let form = ["text": text, "source_lang": deepLSource(source), "target_lang": deepLTarget(target)]
+        var form = ["text": text, "target_lang": deepLTarget(target)]
+        // Omit `source_lang` so DeepL auto-detects when the caller passes "auto".
+        if source != "auto" { form["source_lang"] = deepLSource(source) }
 
         let resp: HTTPResponse
         do { resp = try await http.post(url: url, headers: headers, form: form) }

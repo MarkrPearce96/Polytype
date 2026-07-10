@@ -14,21 +14,17 @@ public final class GoogleEngine: TranslationEngine {
         self.secrets = secrets; self.http = http; self.host = host
     }
 
-    /// Google's language codes: any Chinese variant → Traditional (Taiwan); others pass through.
-    private func googleLang(_ code: String) -> String {
-        code.lowercased().hasPrefix("zh") ? "zh-TW" : code
-    }
-
     public func translate(_ text: String, from source: String, to target: String) async throws -> String {
         guard let key = secrets.get(googleKeyName), !key.isEmpty else { throw TranslationError.noAPIKey }
         let url = URL(string: "https://\(host)/language/translate/v2")!
-        let form = [
+        var form = [
             "q": text,
-            "source": googleLang(source),
-            "target": googleLang(target),
+            "target": target,       // exact code (zh-TW, zh-CN, ja, ko, …)
             "format": "text",
             "key": key,
         ]
+        // Omit `source` so Google auto-detects when the caller passes "auto".
+        if source != "auto" { form["source"] = source }
 
         let resp: HTTPResponse
         do { resp = try await http.post(url: url, headers: [:], form: form) }
