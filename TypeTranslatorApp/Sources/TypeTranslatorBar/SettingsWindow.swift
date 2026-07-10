@@ -69,6 +69,15 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Usage") {
+                    Text(usageSummary).font(.callout)
+                    Button("View exact usage in Google Cloud →") {
+                        if let url = URL(string: "https://console.cloud.google.com/apis/api/translate.googleapis.com/metrics") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+
                 Section("Startup") {
                     Toggle("Launch at login", isOn: $launchAtLogin)
                         .onChange(of: launchAtLogin) { _, newValue in
@@ -121,6 +130,17 @@ struct SettingsView: View {
 
     private func caption(_ text: String) -> some View {
         Text(text).font(.caption).foregroundStyle(.secondary)
+    }
+
+    private var usageSummary: String {
+        guard let meter = MeterAccess.meter else { return "Usage tracking unavailable." }
+        let used = meter.used
+        if used >= meter.cap {
+            return "Free limit reached (\(used.formatted()) / \(meter.limit.formatted())). "
+                 + "Using Apple on-device until \(MeterAccess.resetDateString())."
+        }
+        return "≈\(used.formatted()) / \(meter.limit.formatted()) characters this month · "
+             + "Resets \(MeterAccess.resetDateString())."
     }
 }
 
