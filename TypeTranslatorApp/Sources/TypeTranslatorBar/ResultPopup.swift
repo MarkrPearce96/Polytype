@@ -79,8 +79,12 @@ final class ResultPopup {
                 }
             }
         }
-        // Auto-dismiss fallback.
-        dismissTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in
+        // Auto-dismiss fallback — generous and scaled to how much text there is,
+        // since Esc or a click elsewhere already dismisses it instantly. Floor of
+        // 25s keeps short phrases readable; longer passages get more time, capped
+        // at 90s so a walked-away-from popup can't linger forever.
+        let readingTime = min(90, max(25, Double(text.count) / 8))
+        dismissTimer = Timer.scheduledTimer(withTimeInterval: readingTime, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.generation == gen else { return }
                 self.dismiss()
