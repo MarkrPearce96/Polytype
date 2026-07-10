@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var composeHotkey: HotkeyController!
     private var readHotkey: HotkeyController!
     private var readItem: NSMenuItem!
+    private var composeLangMenu: NSMenu!
+    private var readLangMenu: NSMenu!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Google Cloud Translation primary (free 500k chars/month), Apple
@@ -60,6 +62,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         readItem = NSMenuItem(title: "Translate selection to English  (\(readHotkey.display))",
                               action: #selector(readNow), keyEquivalent: "")
         menu.addItem(readItem)
+
+        composeLangMenu = NSMenu()
+        for lang in Languages.all {
+            let item = NSMenuItem(title: lang.name, action: #selector(selectComposeLanguage(_:)), keyEquivalent: "")
+            item.representedObject = lang.code
+            item.target = self
+            composeLangMenu.addItem(item)
+        }
+        let composeLangItem = NSMenuItem(title: "Compose language", action: nil, keyEquivalent: "")
+        composeLangItem.submenu = composeLangMenu
+        menu.addItem(composeLangItem)
+
+        readLangMenu = NSMenu()
+        let autoItem = NSMenuItem(title: "Auto-detect", action: #selector(selectReadLanguage(_:)), keyEquivalent: "")
+        autoItem.representedObject = Languages.autoCode
+        autoItem.target = self
+        readLangMenu.addItem(autoItem)
+        for lang in Languages.all {
+            let item = NSMenuItem(title: lang.name, action: #selector(selectReadLanguage(_:)), keyEquivalent: "")
+            item.representedObject = lang.code
+            item.target = self
+            readLangMenu.addItem(item)
+        }
+        let readLangItem = NSMenuItem(title: "Read language", action: nil, keyEquivalent: "")
+        readLangItem.submenu = readLangMenu
+        menu.addItem(readLangItem)
+
         menu.addItem(.separator())
         lastEngineItem = NSMenuItem(title: "Last translation: —", action: nil, keyEquivalent: "")
         lastEngineItem.isEnabled = false
@@ -77,15 +106,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Global hotkeys (defaults ⌥⌘T / ⌥⌘R; changeable in Settings).
         composeHotkey.action = { [weak self] in self?.translateNow() }
-        composeHotkey.onChange = { [weak self] d in self?.translateItem.title = "Translate what I typed  (\(d))" }
+        composeHotkey.onChange = { [weak self] _ in self?.refreshLanguageMenus() }
         composeHotkey.register()
 
         readHotkey.action = { [weak self] in self?.readNow() }
-        readHotkey.onChange = { [weak self] d in self?.readItem.title = "Translate selection to English  (\(d))" }
+        readHotkey.onChange = { [weak self] _ in self?.refreshLanguageMenus() }
         readHotkey.register()
 
         // Ask for Accessibility up front so the first hotkey press isn't a no-op.
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+
+        refreshLanguageMenus()
     }
 
     /// Put our colored app icon in the menu bar. Returns false if the image
@@ -119,5 +150,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    @objc private func selectComposeLanguage(_ sender: NSMenuItem) {
+        guard let code = sender.representedObject as? String else { return }
+        LanguagePrefs.composeTargetCode = code
+        refreshLanguageMenus()
+    }
+
+    @objc private func selectReadLanguage(_ sender: NSMenuItem) {
+        guard let code = sender.representedObject as? String else { return }
+        LanguagePrefs.readSourceCode = code
+        refreshLanguageMenus()
+    }
+
+    /// Sync checkmarks and the compose/read menu-item titles to the current
+    /// selections. Also the single source of truth for those two titles.
+    private func refreshLanguageMenus() {
+        let compose = LanguagePrefs.composeTargetCode
+        let read = LanguagePrefs.readSourceCode
+        for item in composeLangMenu.items {
+            item.state = (item.representedObject as? String == compose) ? .on : .off
+        }
+        for item in readLangMenu.items {
+            item.state = (item.representedObject as? String == read) ? .on : .off
+        }
+        translateItem.title = "Translate what I typed → \(Languages.name(for: compose))  (\(composeHotkey.display))"
+        readItem.title = "Read selection (\(Languages.name(for: read)))  (\(readHotkey.display))"
     }
 }
