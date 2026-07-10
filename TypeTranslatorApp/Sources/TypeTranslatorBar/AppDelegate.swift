@@ -34,11 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // display each one's current combo.
         composeHotkey = HotkeyController(id: "compose",
             defaultKeyCode: UInt32(kVK_ANSI_T), defaultModifiers: UInt32(cmdKey | optionKey), defaultDisplay: "⌥⌘T")
-        // Temporary bridge — SettingsWindow.swift still targets
-        // HotkeyController.shared until Task 5 rewires it. Remove in Task 5.
-        HotkeyController.shared = composeHotkey
         readHotkey = HotkeyController(id: "read",
             defaultKeyCode: UInt32(kVK_ANSI_R), defaultModifiers: UInt32(cmdKey | optionKey), defaultDisplay: "⌥⌘R")
+        HotkeyAccess.compose = composeHotkey
+        HotkeyAccess.read = readHotkey
 
         // Menu-bar item — our app icon, with a transient status glyph beside it
         // during a translation ("…", "✓", "⚠").

@@ -7,12 +7,6 @@ import Carbon
 /// across launches, namespaced by `id` so multiple hotkeys can coexist.
 @MainActor
 final class HotkeyController {
-    /// Temporary compatibility bridge for `SettingsWindow.swift`, which still
-    /// references `HotkeyController.shared` until Task 5 rewires it to target
-    /// a specific instance. Set once in `AppDelegate` right after the compose
-    /// controller is created. Remove this property in Task 5.
-    static var shared: HotkeyController!
-
     private let id: String
     private var keyCode: UInt32
     private var carbonMods: UInt32
@@ -62,4 +56,11 @@ final class HotkeyController {
         onChange?(display)
         return false
     }
+}
+
+/// Lets the SwiftUI Settings view reach the controllers created in AppDelegate.
+@MainActor
+enum HotkeyAccess {
+    static var compose: HotkeyController?
+    static var read: HotkeyController?
 }

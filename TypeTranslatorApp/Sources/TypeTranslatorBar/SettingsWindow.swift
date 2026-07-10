@@ -8,7 +8,8 @@ struct SettingsView: View {
     private let secrets = KeychainSecretStore()
     @State private var key: String = ""
     @State private var status: String = ""
-    @State private var hotkeyDisplay: String = HotkeyController.shared.display
+    @State private var composeDisplay: String = HotkeyAccess.compose?.display ?? "⌥⌘T"
+    @State private var readDisplay: String = HotkeyAccess.read?.display ?? "⌥⌘R"
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
 
     var body: some View {
@@ -20,19 +21,23 @@ struct SettingsView: View {
             Divider()
 
             HStack(spacing: 8) {
-                Text("Shortcut:").font(.callout)
-                HotkeyRecorder(current: hotkeyDisplay) { keyCode, mods, display in
-                    if HotkeyController.shared.update(keyCode: keyCode, carbonMods: mods, display: display) {
-                        hotkeyDisplay = display
-                        status = "Shortcut set to \(display)."
-                    } else {
-                        status = "That shortcut is already in use by another app — try another."
-                    }
-                }
-                .frame(width: 150, height: 26)
+                Text("Compose (English → 中):").font(.callout)
+                HotkeyRecorder(current: composeDisplay) { keyCode, mods, display in
+                    if HotkeyAccess.compose?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
+                        composeDisplay = display; status = "Compose shortcut set to \(display)."
+                    } else { status = "That shortcut is already in use — try another." }
+                }.frame(width: 150, height: 26)
             }
-            Text("Click the button, then press the keys you want (must include ⌘, ⌥, ⌃, or ⇧). "
-                 + "Press it in any app to translate the text you just typed, in place.")
+            HStack(spacing: 8) {
+                Text("Read (中 → English):").font(.callout)
+                HotkeyRecorder(current: readDisplay) { keyCode, mods, display in
+                    if HotkeyAccess.read?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
+                        readDisplay = display; status = "Read shortcut set to \(display)."
+                    } else { status = "That shortcut is already in use — try another." }
+                }.frame(width: 150, height: 26)
+            }
+            Text("Click a button, then press the keys you want (must include ⌘, ⌥, ⌃, or ⇧). "
+                 + "Compose translates what you typed in place; Read shows the English for selected Chinese in a popup.")
                 .font(.caption).foregroundStyle(.secondary)
 
             Divider()
