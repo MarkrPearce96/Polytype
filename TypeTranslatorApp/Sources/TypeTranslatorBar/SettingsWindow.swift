@@ -37,7 +37,7 @@ struct SettingsView: View {
                 }.frame(width: 150, height: 26)
             }
             Text("Click a button, then press the keys you want (must include ⌘, ⌥, ⌃, or ⇧). "
-                 + "Compose translates what you typed in place; Read shows the English for selected Chinese in a popup.")
+                 + "Compose translates what you typed in place; Read shows the English for selected foreign text in a popup. Choose languages from the menu-bar icon.")
                 .font(.caption).foregroundStyle(.secondary)
 
             Divider()
@@ -67,14 +67,15 @@ struct SettingsView: View {
                         ? "Key cleared — using Apple on-device only."
                         : "Key saved to Keychain."
                 }
-                Button("Download zh-TW pack") {
-                    Task {
-                        if #available(macOS 15, *) {
-                            _ = try? await AppleEngine().translate("hello", from: "en", to: "zh-TW")
-                        }
-                        status = "If macOS prompts, allow the language download. "
-                               + "This enables offline translation."
+                Button("Manage offline languages…") {
+                    // Apple's on-device (offline) translation uses the languages
+                    // managed in System Settings ▸ General ▸ Language & Region ▸
+                    // Translation Languages. Google (online) needs no downloads.
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") {
+                        NSWorkspace.shared.open(url)
                     }
+                    status = "In Language & Region, open “Translation Languages” to "
+                           + "download languages for offline use. (Online, Google needs none.)"
                 }
             }
 
