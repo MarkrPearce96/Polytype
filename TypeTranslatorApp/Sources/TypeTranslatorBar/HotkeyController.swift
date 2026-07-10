@@ -1,22 +1,22 @@
 import AppKit
 import Carbon
 
-/// Owns the single global hotkey: loads the saved combo (default ⌥⌘T), registers
-/// it, and re-registers when the user picks a new one in Settings. The chosen
-/// combo persists in UserDefaults across launches.
+/// Owns a single named global hotkey: loads the saved combo (falling back to
+/// the caller-supplied default), registers it, and re-registers when the user
+/// picks a new one in Settings. The chosen combo persists in UserDefaults
+/// across launches, namespaced by `id` so multiple hotkeys can coexist.
 @MainActor
 final class HotkeyController {
-    static let shared = HotkeyController()
+    /// Temporary compatibility bridge for `SettingsWindow.swift`, which still
+    /// references `HotkeyController.shared` until Task 5 rewires it to target
+    /// a specific instance. Set once in `AppDelegate` right after the compose
+    /// controller is created. Remove this property in Task 5.
+    static var shared: HotkeyController!
 
-    private enum Key {
-        static let keyCode = "hotkeyKeyCode"
-        static let modifiers = "hotkeyModifiers"
-        static let display = "hotkeyDisplay"
-    }
-
-    private(set) var display: String
+    private let id: String
     private var keyCode: UInt32
     private var carbonMods: UInt32
+    private(set) var display: String
     private var hotKey: HotKey?
 
     /// Invoked when the hotkey fires.
@@ -24,11 +24,12 @@ final class HotkeyController {
     /// Invoked whenever the displayed shortcut changes (so the menu can update).
     var onChange: ((String) -> Void)?
 
-    private init() {
+    init(id: String, defaultKeyCode: UInt32, defaultModifiers: UInt32, defaultDisplay: String) {
+        self.id = id
         let d = UserDefaults.standard
-        keyCode = UInt32(d.object(forKey: Key.keyCode) as? Int ?? kVK_ANSI_T)
-        carbonMods = UInt32(d.object(forKey: Key.modifiers) as? Int ?? (cmdKey | optionKey))
-        display = d.string(forKey: Key.display) ?? "⌥⌘T"
+        keyCode = UInt32(d.object(forKey: "hotkey.\(id).keyCode") as? Int ?? Int(defaultKeyCode))
+        carbonMods = UInt32(d.object(forKey: "hotkey.\(id).modifiers") as? Int ?? Int(defaultModifiers))
+        display = d.string(forKey: "hotkey.\(id).display") ?? defaultDisplay
     }
 
     /// (Re)register the current combo. Returns false if the system rejected it
@@ -49,9 +50,9 @@ final class HotkeyController {
         keyCode = newKey; carbonMods = newMods; display = newDisplay
         if register() {
             let d = UserDefaults.standard
-            d.set(Int(newKey), forKey: Key.keyCode)
-            d.set(Int(newMods), forKey: Key.modifiers)
-            d.set(newDisplay, forKey: Key.display)
+            d.set(Int(newKey), forKey: "hotkey.\(id).keyCode")
+            d.set(Int(newMods), forKey: "hotkey.\(id).modifiers")
+            d.set(newDisplay, forKey: "hotkey.\(id).display")
             onChange?(display)
             return true
         }

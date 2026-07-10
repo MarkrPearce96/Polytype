@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import TranslationCore
 
 @MainActor
@@ -8,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var translateItem: NSMenuItem!
     private var service: TranslateService!
     private let defaultTitle = "譯"
+    private var composeHotkey: HotkeyController!
+    private var readHotkey: HotkeyController!
+    private var readItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Google Cloud Translation primary (free 500k chars/month), Apple
@@ -26,6 +30,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         service = TranslateService(engine: engine, fallbackFlag: flag)
 
+        // Both hotkeys are created before the menu below, since the menu items
+        // display each one's current combo.
+        composeHotkey = HotkeyController(id: "compose",
+            defaultKeyCode: UInt32(kVK_ANSI_T), defaultModifiers: UInt32(cmdKey | optionKey), defaultDisplay: "⌥⌘T")
+        // Temporary bridge — SettingsWindow.swift still targets
+        // HotkeyController.shared until Task 5 rewires it. Remove in Task 5.
+        HotkeyController.shared = composeHotkey
+        readHotkey = HotkeyController(id: "read",
+            defaultKeyCode: UInt32(kVK_ANSI_R), defaultModifiers: UInt32(cmdKey | optionKey), defaultDisplay: "⌥⌘R")
+
         // Menu-bar item — our app icon, with a transient status glyph beside it
         // during a translation ("…", "✓", "⚠").
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -41,9 +55,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        translateItem = NSMenuItem(title: "Translate what I typed  (\(HotkeyController.shared.display))",
+        translateItem = NSMenuItem(title: "Translate what I typed  (\(composeHotkey.display))",
                                    action: #selector(translateNow), keyEquivalent: "")
         menu.addItem(translateItem)
+        readItem = NSMenuItem(title: "Translate selection to English  (\(readHotkey.display))",
+                              action: #selector(readNow), keyEquivalent: "")
+        menu.addItem(readItem)
         menu.addItem(.separator())
         lastEngineItem = NSMenuItem(title: "Last translation: —", action: nil, keyEquivalent: "")
         lastEngineItem.isEnabled = false
@@ -59,12 +76,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.lastEngineItem.title = "Last translation: \(name)"
         }
 
-        // Global hotkey (default ⌥⌘T; changeable in Settings).
-        HotkeyController.shared.action = { [weak self] in self?.translateNow() }
-        HotkeyController.shared.onChange = { [weak self] display in
-            self?.translateItem.title = "Translate what I typed  (\(display))"
-        }
-        HotkeyController.shared.register()
+        // Global hotkeys (defaults ⌥⌘T / ⌥⌘R; changeable in Settings).
+        composeHotkey.action = { [weak self] in self?.translateNow() }
+        composeHotkey.onChange = { [weak self] d in self?.translateItem.title = "Translate what I typed  (\(d))" }
+        composeHotkey.register()
+
+        readHotkey.action = { [weak self] in self?.readNow() }
+        readHotkey.onChange = { [weak self] d in self?.readItem.title = "Translate selection to English  (\(d))" }
+        readHotkey.register()
 
         // Ask for Accessibility up front so the first hotkey press isn't a no-op.
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
@@ -89,6 +108,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func translateNow() {
         service.translateSelectionInPlace()
+    }
+
+    /// Temporary stub — replaced with real read-translation behavior in Task 4.
+    @objc private func readNow() {
+        ResultPopup.shared.show("Read hotkey works", at: NSEvent.mouseLocation)
     }
 
     @objc private func openSettings() {
