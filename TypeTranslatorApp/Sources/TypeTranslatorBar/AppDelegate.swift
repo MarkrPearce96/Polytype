@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import TranslationCore
+import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -11,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let networkMonitor = NetworkMonitor()
     private var translateItem: NSMenuItem!
     private var service: TranslateService!
+    private var usageMeter: UsageMeter?
     private let defaultTitle = "譯"
     private var composeHotkey: HotkeyController!
     private var readHotkey: HotkeyController!
@@ -26,14 +28,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let secrets = KeychainSecretStore()
         let http = URLSessionHTTPClient()
         let google = GoogleEngine(secrets: secrets, http: http)
+        let meter = UsageMeter(store: UserDefaultsUsageStore(),
+                               month: { MeterAccess.currentMonthKey() })
+        usageMeter = meter
+        MeterAccess.meter = meter
+        let gated = QuotaGate(primary: google, meter: meter)
         let flag = FallbackFlag()
         let engine: TranslationEngine
         if #available(macOS 15, *) {
-            let chain = FallbackChain(primary: google, fallback: AppleEngine())
-            chain.onFallback = { _ in flag.value = true }   // Google failed → Apple used
+            let chain = FallbackChain(primary: gated, fallback: AppleEngine())
+            chain.onFallback = { [weak self] error in
+                flag.value = true   // Google failed → Apple used
+                if error == .quotaExceeded { Task { @MainActor in self?.handleQuotaReached() } }
+            }
             engine = chain
         } else {
-            engine = google
+            engine = gated   // macOS 14: no Apple fallback; over-cap fails closed (never charged)
         }
         service = TranslateService(engine: engine, fallbackFlag: flag)
 
@@ -148,7 +158,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // switch to a specific language while offline and restore auto when back.
         networkMonitor.onChange = { [weak self] online in self?.handleNetworkChange(online: online) }
         networkMonitor.start()
+
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
+
+    /// First time the monthly cap is hit, tell the user we've switched to Apple.
+    private func handleQuotaReached() {
+        guard let meter = usageMeter, !meter.hasNotified else { return }
+        meter.markNotified()
+        updateUsageDisplay()   // added in Task 4; safe no-op-ish until then
+
+        let content = UNMutableNotificationContent()
+        content.title = "Google free limit reached"
+        content.body = "Using Apple on-device translation until \(MeterAccess.resetDateString())."
+        let request = UNNotificationRequest(identifier: "quota.reached", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    private func updateUsageDisplay() {}   // TEMP — implemented in Task 4
 
     private func handleNetworkChange(online: Bool) {
         if !online {
