@@ -142,16 +142,15 @@ final class TranslateService {
                     return
                 }
                 let forwardEngine = self.fallbackFlag.value ? "apple" : "google"
-                let (back, backEngineName) = await self.backTranslate(translated, from: target)
                 let fullName = Languages.name(for: target)
                 let shortName = String(fullName.split(separator: " (").first ?? Substring(fullName))
-                // Translation is done; we're now waiting on the user, which can
-                // outlast the 25s backstop. Disarm the watchdog and let the popup's
-                // own dismiss timer / onCancel be the backstop.
+                // Forward translation is done; show the preview immediately and let
+                // the back-check fill in, so it feels as fast as an instant paste.
+                // Also disarm the watchdog — we're now waiting on the user, which
+                // can outlast the 25s backstop (the popup's own timer takes over).
                 self.disarmWatchdog()
                 ComposePreviewPopup.shared.show(
-                    original: english, translation: translated, languageName: shortName,
-                    backTranslation: back, backEngine: backEngineName, at: cursor,
+                    original: english, translation: translated, languageName: shortName, at: cursor,
                     onInsert: { [weak self] in
                         guard let self else { return }
                         pb.clearContents()
@@ -162,6 +161,10 @@ final class TranslateService {
                     },
                     onCancel: { [weak self] in
                         self?.finish(status: "", restore: saved, to: pb, after: 0.1)
+                    },
+                    back: { [weak self] in
+                        guard let self else { return (nil, nil) }
+                        return await self.backTranslate(translated, from: target)
                     })
             } catch {
                 self.onEngineUsed?("failed")

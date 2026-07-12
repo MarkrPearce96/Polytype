@@ -12,6 +12,7 @@ final class ComposePreviewPopup {
 
     private var panel: NSPanel?
     private var clickMonitor: Any?
+    private var escMonitor: Any?
     private var keyMonitorFallback: Any?
     private var dismissTimer: Timer?
     private var eventTap: CFMachPort?
@@ -20,19 +21,29 @@ final class ComposePreviewPopup {
     private var onCancel: (() -> Void)?
     private var generation = 0
 
+    // Refs for filling in the back-translation after the popup is already shown.
+    private var backRow: NSStackView?
+    private var backCaptionLabel: NSTextField?
+    private var backValueLabel: NSTextField?
+    private weak var containerView: NSVisualEffectView?
+    private var anchorPoint: NSPoint = .zero
+
+    /// Shows the preview immediately using the already-computed forward
+    /// translation; `back` is awaited AFTER the panel is on screen and fills in
+    /// the "Means back" line, so the preview appears as fast as an instant paste.
     func show(original: String, translation: String, languageName: String,
-              backTranslation: String?, backEngine: String?,
               at screenPoint: NSPoint,
-              onInsert: @escaping () -> Void, onCancel: @escaping () -> Void) {
+              onInsert: @escaping () -> Void, onCancel: @escaping () -> Void,
+              back: @escaping () async -> (String?, String?)) {
         teardown()                       // clear any prior panel without firing callbacks
         generation += 1
         let gen = generation
         self.onInsert = onInsert
         self.onCancel = onCancel
+        self.anchorPoint = screenPoint
 
         let content = buildContent(original: original, translation: translation,
-                                   languageName: languageName,
-                                   backTranslation: backTranslation, backEngine: backEngine)
+                                   languageName: languageName)
         let container = NSVisualEffectView()
         container.material = .popover
         container.state = .active
@@ -47,6 +58,7 @@ final class ComposePreviewPopup {
             content.topAnchor.constraint(equalTo: container.topAnchor),
             content.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
+        self.containerView = container
 
         let fitting = container.fittingSize
         let size = NSSize(width: max(300, fitting.width), height: max(80, fitting.height))
@@ -75,14 +87,33 @@ final class ComposePreviewPopup {
             }
         }
 
+        // Esc always cancels — a reliable backup for the event tap. If the tap
+        // consumes Esc this monitor never sees it; if the tap isn't delivering
+        // events on this system, this still dismisses. Esc leaking to the app
+        // underneath is harmless (unlike Return, which stays tap-only).
+        escMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard event.keyCode == 53 else { return }
+            Task { @MainActor in
+                guard let self, self.generation == gen else { return }
+                self.finish(insert: false)
+            }
+        }
+
         // Length-scaled auto-dismiss (= cancel), so a walked-away preview never
         // inserts on its own. Floor 25s, capped 90s.
-        let readingTime = min(90, max(25, Double((backTranslation ?? "").count + translation.count) / 8))
+        let readingTime = min(90, max(25, Double(translation.count) / 6))
         dismissTimer = Timer.scheduledTimer(withTimeInterval: readingTime, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.generation == gen else { return }
                 self.finish(insert: false)
             }
+        }
+
+        // Fill in the back-translation after the popup is visible.
+        Task { @MainActor in
+            let (text, engineName) = await back()
+            guard self.generation == gen else { return }
+            self.applyBack(text: text, engine: engineName)
         }
     }
 
@@ -99,8 +130,9 @@ final class ComposePreviewPopup {
     private func teardown() {
         dismissTimer?.invalidate(); dismissTimer = nil
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        if let escMonitor { NSEvent.removeMonitor(escMonitor) }
         if let keyMonitorFallback { NSEvent.removeMonitor(keyMonitorFallback) }
-        clickMonitor = nil; keyMonitorFallback = nil
+        clickMonitor = nil; escMonitor = nil; keyMonitorFallback = nil
         if let source = runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: false) }
         runLoopSource = nil; eventTap = nil
@@ -146,9 +178,8 @@ final class ComposePreviewPopup {
 
     // MARK: - Layout
 
-    private func buildContent(original: String, translation: String, languageName: String,
-                              backTranslation: String?, backEngine: String?) -> NSView {
-        func section(_ caption: String, _ value: String, emphasized: Bool) -> NSStackView {
+    private func buildContent(original: String, translation: String, languageName: String) -> NSView {
+        func section(_ caption: String, _ value: String, emphasized: Bool) -> (NSStackView, NSTextField, NSTextField) {
             let cap = NSTextField(labelWithString: caption.uppercased())
             cap.font = .systemFont(ofSize: 10, weight: .semibold)
             cap.textColor = .tertiaryLabelColor
@@ -159,29 +190,50 @@ final class ComposePreviewPopup {
             val.preferredMaxLayoutWidth = 340
             let s = NSStackView(views: [cap, val])
             s.orientation = .vertical; s.alignment = .leading; s.spacing = 2
-            return s
+            return (s, cap, val)
         }
 
-        var rows: [NSView] = [
-            section("You typed", original, emphasized: false),
-            section("Will send · \(languageName)", translation, emphasized: true),
-        ]
-        if let back = backTranslation, !back.isEmpty {
-            let label = "Means back" + (backEngine.map { " · \($0)" } ?? "")
-            rows.append(section(label, back, emphasized: false))
-        }
+        let (typedRow, _, _) = section("You typed", original, emphasized: false)
+        let (sendRow, _, _) = section("Will send · \(languageName)", translation, emphasized: true)
+        let (backRow, backCap, backVal) = section("Means back", "checking…", emphasized: false)
+        self.backRow = backRow
+        self.backCaptionLabel = backCap
+        self.backValueLabel = backVal
+
         let sep = NSBox(); sep.boxType = .separator
-        rows.append(sep)
         let hint = NSTextField(labelWithString: "⏎ Insert      esc Cancel")
         hint.font = .systemFont(ofSize: 11); hint.textColor = .secondaryLabelColor
-        rows.append(hint)
 
-        let stack = NSStackView(views: rows)
+        let stack = NSStackView(views: [typedRow, sendRow, backRow, sep, hint])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 12, right: 16)
         // Make the separator span the content width.
         sep.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
         return stack
+    }
+
+    /// Fill in (or hide) the "Means back" row once the back-translation resolves,
+    /// then resize the panel to fit the new content.
+    fileprivate func applyBack(text: String?, engine: String?) {
+        if let text, !text.isEmpty {
+            let label = "Means back" + (engine.map { " · \($0)" } ?? "")
+            backCaptionLabel?.stringValue = label.uppercased()
+            backValueLabel?.stringValue = text
+            backRow?.isHidden = false
+        } else {
+            backRow?.isHidden = true   // both engines failed — drop the row entirely
+        }
+        resizeToFit()
+    }
+
+    /// Re-fit the panel after the "Means back" line changes height.
+    private func resizeToFit() {
+        guard let panel, let container = containerView else { return }
+        container.layoutSubtreeIfNeeded()
+        let fitting = container.fittingSize
+        let size = NSSize(width: max(300, fitting.width), height: max(80, fitting.height))
+        let origin = clampedOrigin(for: size, near: anchorPoint)
+        panel.setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
     }
 
     private func clampedOrigin(for size: NSSize, near point: NSPoint) -> NSPoint {
