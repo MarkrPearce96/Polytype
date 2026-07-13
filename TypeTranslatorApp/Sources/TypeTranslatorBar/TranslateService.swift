@@ -370,8 +370,11 @@ final class TranslateService {
 
     private func finish(status: String, restore saved: [NSPasteboardItem], to pb: NSPasteboard, after: TimeInterval) {
         onStatus?(status)
-        DispatchQueue.main.asyncAfter(deadline: .now() + after) { [weak self] in
-            self?.restorePasteboard(saved, to: pb)
+        DispatchQueue.main.asyncAfter(deadline: .now() + after) {
+            // Restore inline (no self capture) so a late timer always restores,
+            // even if the service were being torn down.
+            pb.clearContents()
+            if !saved.isEmpty { pb.writeObjects(saved) }
         }
         // Clear the transient glyph shortly after.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
