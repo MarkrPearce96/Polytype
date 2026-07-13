@@ -117,7 +117,10 @@ final class ComposePreviewPopup {
         }
     }
 
-    func dismiss() { teardown() }
+    /// Cancel the preview from outside. Routes through `finish` so the pending
+    /// operation always resolves (a bare `teardown()` would strand the caller's
+    /// `busy` flag, since the watchdog is disarmed once the popup is shown).
+    func dismiss() { finish(insert: false) }
 
     /// Fire exactly one of the callbacks, then tear everything down.
     fileprivate func finish(insert: Bool) {
@@ -138,6 +141,10 @@ final class ComposePreviewPopup {
         runLoopSource = nil; eventTap = nil
         panel?.orderOut(nil); panel = nil
         onInsert = nil; onCancel = nil
+        // Invalidate any in-flight back-fill Task and drop view refs so a late
+        // back() result can't touch a torn-down panel.
+        generation += 1
+        backRow = nil; backCaptionLabel = nil; backValueLabel = nil; containerView = nil
     }
 
     // MARK: - Key interception

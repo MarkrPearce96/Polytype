@@ -107,7 +107,7 @@ struct SettingsView: View {
                                 }.frame(width: 132, height: 24)
                             }
                         }
-                        caption("Shows the translation and what it means back in English before inserting. Return inserts; Esc cancels. The back-check uses Apple's free on-device engine, so it doesn't count against your Google free tier.")
+                        caption("Shows the translation and what it means back in English before inserting. Return inserts; Esc cancels. The back-check prefers Apple's free on-device engine (macOS 15 with the language downloaded), so it usually doesn't count against your Google free tier; otherwise it falls back to Google.")
                     }
                 }
 
