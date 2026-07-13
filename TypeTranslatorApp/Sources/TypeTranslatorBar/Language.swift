@@ -66,4 +66,18 @@ enum LanguagePrefs {
     static var effectiveReadSourceCode: String {
         readSourceOverride ?? readSourceCode
     }
+
+    /// Whether Compose shows a confirm-before-insert preview. Default off, so the
+    /// out-of-box behavior is unchanged (instant replace).
+    static var previewEnabled: Bool {
+        get { defaults.bool(forKey: "previewEnabled") }
+        set { defaults.set(newValue, forKey: "previewEnabled") }
+    }
+
+    /// When preview is enabled: true → the Compose hotkey itself shows the preview;
+    /// false → a separate preview hotkey does, and Compose stays instant.
+    static var previewUsesComposeHotkey: Bool {
+        get { defaults.bool(forKey: "previewUsesComposeHotkey") }
+        set { defaults.set(newValue, forKey: "previewUsesComposeHotkey") }
+    }
 }

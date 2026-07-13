@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let defaultTitle = "譯"
     private var composeHotkey: HotkeyController!
     private var readHotkey: HotkeyController!
+    private var previewHotkey: HotkeyController!
     private var readItem: NSMenuItem!
     private var composeLangMenu: NSMenu!
     private var readLangMenu: NSMenu!
@@ -46,7 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             engine = gated   // macOS 14: no Apple fallback; over-cap fails closed (never charged)
         }
-        service = TranslateService(engine: engine, fallbackFlag: flag)
+        var backEngine: TranslationEngine? = nil
+        if #available(macOS 15, *) { backEngine = AppleEngine() }
+        service = TranslateService(engine: engine, fallbackFlag: flag, backTranslateEngine: backEngine)
 
         // Both hotkeys are created before the menu below, since the menu items
         // display each one's current combo.
@@ -56,6 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defaultKeyCode: UInt32(kVK_ANSI_R), defaultModifiers: UInt32(cmdKey | optionKey), defaultDisplay: "⌥⌘R")
         HotkeyAccess.compose = composeHotkey
         HotkeyAccess.read = readHotkey
+        previewHotkey = HotkeyController(id: "preview",
+            defaultKeyCode: UInt32(kVK_ANSI_T),
+            defaultModifiers: UInt32(cmdKey | optionKey | shiftKey), defaultDisplay: "⌥⇧⌘T")
+        HotkeyAccess.preview = previewHotkey
 
         // Menu-bar item — our app icon, with a transient status glyph beside it
         // during a translation ("…", "✓", "⚠").
@@ -148,14 +155,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateUsageDisplay()
         }
 
-        // Global hotkeys (defaults ⌥⌘T / ⌥⌘R; changeable in Settings).
+        // Global hotkeys (defaults ⌥⌘T / ⌥⌘R / ⌥⇧⌘T; changeable in Settings).
         composeHotkey.action = { [weak self] in self?.translateNow() }
         composeHotkey.onChange = { [weak self] _ in self?.refreshLanguageMenus() }
-        composeHotkey.register()
-
         readHotkey.action = { [weak self] in self?.readNow() }
         readHotkey.onChange = { [weak self] _ in self?.refreshLanguageMenus() }
-        readHotkey.register()
+        previewHotkey.action = { [weak self] in self?.previewNow() }
+        previewHotkey.onChange = { [weak self] _ in self?.refreshLanguageMenus() }
+        PreviewControl.onSettingsChanged = { [weak self] in self?.applyHotkeyRegistration() }
+        applyHotkeyRegistration()
 
         // Ask for Accessibility up front so the first hotkey press isn't a no-op.
         // First-run users get this from the setup wizard's Accessibility step instead,
@@ -244,8 +252,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// The Compose action (hotkey + menu item). Routes to preview only when preview
+    /// is enabled AND set to take over the Compose hotkey; otherwise instant.
     @objc private func translateNow() {
-        service.translateSelectionInPlace()
+        if LanguagePrefs.previewEnabled && LanguagePrefs.previewUsesComposeHotkey {
+            service.translateSelectionWithPreview()
+        } else {
+            service.translateSelectionInPlace()
+        }
+    }
+
+    /// The dedicated preview action (separate preview hotkey).
+    @objc private func previewNow() {
+        service.translateSelectionWithPreview()
+    }
+
+    /// (Re)apply hotkey registration for the current preview settings. Compose and
+    /// Read are always registered (Compose routes internally); the separate preview
+    /// hotkey is registered only when preview is on and NOT taking over Compose.
+    private func applyHotkeyRegistration() {
+        composeHotkey.register()
+        readHotkey.register()
+        if LanguagePrefs.previewEnabled && !LanguagePrefs.previewUsesComposeHotkey {
+            previewHotkey.register()
+        } else {
+            previewHotkey.unregister()
+        }
     }
 
     @objc private func readNow() {

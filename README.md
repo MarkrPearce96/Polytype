@@ -68,6 +68,14 @@ which `install-bar.sh` handles.)
   language**.
 - **Existing document** (select first): **select** the text you want translated,
   then press the hotkey — only the selection is replaced.
+- **Preview before sending (optional):** turn on **Settings → Preview → "Preview
+  before inserting"** to see the translation *and what it means back in English*
+  before it's inserted — press **Return** to insert, **Esc** to cancel. Choose
+  whether it runs on a separate shortcut (default ⌥⇧⌘T) or takes over your Compose
+  shortcut. The back-check prefers Apple's free on-device engine (macOS 15 with the
+  language downloaded), so it usually doesn't count against your Google free tier;
+  when Apple isn't available it falls back to Google. Either way it never *charges*
+  — the free-tier auto-protect still applies.
 - **Read a message** (⌥⌘R, default): select any text on your screen (in a
   message, web page, PDF, etc.), press the hotkey — a small popup near your cursor
   shows the English translation. Nothing is changed or pasted; it's read-only. Change

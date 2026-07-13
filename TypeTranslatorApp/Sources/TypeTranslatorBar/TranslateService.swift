@@ -29,6 +29,7 @@ final class FallbackFlag: @unchecked Sendable {
 @MainActor
 final class TranslateService {
     private let engine: TranslationEngine
+    private let backTranslateEngine: TranslationEngine?
     private let fallbackFlag: FallbackFlag
     private var busy = false
     private var opToken = 0
@@ -39,9 +40,11 @@ final class TranslateService {
     /// ("Google" or "Apple (offline)").
     var onEngineUsed: ((String) -> Void)?
 
-    init(engine: TranslationEngine, fallbackFlag: FallbackFlag = FallbackFlag()) {
+    init(engine: TranslationEngine, fallbackFlag: FallbackFlag = FallbackFlag(),
+         backTranslateEngine: TranslationEngine? = nil) {
         self.engine = engine
         self.fallbackFlag = fallbackFlag
+        self.backTranslateEngine = backTranslateEngine
     }
 
     func translateSelectionInPlace() {
@@ -82,6 +85,106 @@ final class TranslateService {
                 }
             }
         }
+    }
+
+    /// Like `translateSelectionInPlace`, but instead of pasting immediately it
+    /// shows a confirm-before-insert preview with a back-translation.
+    func translateSelectionWithPreview() {
+        guard !busy else { return }
+        guard ensureAccessibility() else {
+            onStatus?("⚠")
+            promptAccessibility()
+            return
+        }
+        busy = true
+        onStatus?("…")
+        armWatchdog()
+
+        let pb = NSPasteboard.general
+        let saved = pb.string(forType: .string)
+        let cursor = NSEvent.mouseLocation
+        let before = pb.changeCount
+        postCommandKey(CGKeyCode(kVK_ANSI_C))
+        waitForClipboardChange(pb, from: before, attempts: 12) { [weak self] hadSelection in
+            guard let self else { return }
+            if hadSelection {
+                self.previewClipboard(pb: pb, saved: saved, at: cursor)
+            } else {
+                let before2 = pb.changeCount
+                self.postCommandKey(CGKeyCode(kVK_ANSI_A))
+                self.postCommandKey(CGKeyCode(kVK_ANSI_C))
+                self.waitForClipboardChange(pb, from: before2, attempts: 25) { changed in
+                    if changed {
+                        self.previewClipboard(pb: pb, saved: saved, at: cursor)
+                    } else {
+                        self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Forward-translate the clipboard English, back-translate for reassurance,
+    /// then show the preview. Paste only happens on confirm.
+    private func previewClipboard(pb: NSPasteboard, saved: String?, at cursor: NSPoint) {
+        let english = pb.string(forType: .string) ?? ""
+        guard !english.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            finish(status: "∅", restore: saved, to: pb, after: 0.1)
+            return
+        }
+        let target = LanguagePrefs.composeTargetCode
+        Task { @MainActor in
+            do {
+                self.fallbackFlag.value = false
+                let translated = try await self.engine.translate(english, from: "en", to: target)
+                guard !translated.isEmpty else {
+                    self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
+                    return
+                }
+                let forwardEngine = self.fallbackFlag.value ? "apple" : "google"
+                let fullName = Languages.name(for: target)
+                let shortName = String(fullName.split(separator: " (").first ?? Substring(fullName))
+                // Forward translation is done; show the preview immediately and let
+                // the back-check fill in, so it feels as fast as an instant paste.
+                // Also disarm the watchdog — we're now waiting on the user, which
+                // can outlast the 25s backstop (the popup's own timer takes over).
+                self.disarmWatchdog()
+                ComposePreviewPopup.shared.show(
+                    original: english, translation: translated, languageName: shortName, at: cursor,
+                    onInsert: { [weak self] in
+                        guard let self else { return }
+                        pb.clearContents()
+                        pb.setString(translated, forType: .string)
+                        self.postCommandKey(CGKeyCode(kVK_ANSI_V))
+                        self.onEngineUsed?(forwardEngine)
+                        self.finish(status: "✓", restore: saved, to: pb, after: 0.4)
+                    },
+                    onCancel: { [weak self] in
+                        self?.finish(status: "", restore: saved, to: pb, after: 0.1)
+                    },
+                    back: { [weak self] in
+                        guard let self else { return (nil, nil) }
+                        return await self.backTranslate(translated, from: target)
+                    })
+            } catch {
+                self.onEngineUsed?("failed")
+                self.finish(status: "⚠", restore: saved, to: pb, after: 0.1)
+            }
+        }
+    }
+
+    /// Back-translation for the preview's reassurance line. Apple on-device first
+    /// (zero Google quota); else the quota-gated engine (still never charges);
+    /// else nil (popup omits the "means back" line). Returns (text, engineLabel).
+    private func backTranslate(_ text: String, from source: String) async -> (String?, String?) {
+        if let apple = backTranslateEngine,
+           let r = try? await apple.translate(text, from: source, to: "en"), !r.isEmpty {
+            return (r, "Apple")
+        }
+        if let r = try? await engine.translate(text, from: source, to: "en"), !r.isEmpty {
+            return (r, "Google")
+        }
+        return (nil, nil)
     }
 
     /// Translate whatever text is now on the clipboard, then paste it back.
@@ -181,6 +284,13 @@ final class TranslateService {
                 self?.onStatus?("")
             }
         }
+    }
+
+    /// Cancel a pending watchdog by advancing the token so its armed check no-ops.
+    /// Used once the preview popup is on screen (translation complete; the wait is
+    /// now bounded by the popup's own dismiss timer instead).
+    private func disarmWatchdog() {
+        opToken += 1
     }
 
     // MARK: - Accessibility

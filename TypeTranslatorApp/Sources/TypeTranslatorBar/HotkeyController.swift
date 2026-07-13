@@ -72,6 +72,12 @@ final class HotkeyController {
         onChange?(display)
         return false
     }
+
+    /// Tear down the registered combo (the underlying Carbon hotkey is released in
+    /// HotKey's deinit). Used when a toggle turns this hotkey off.
+    func unregister() {
+        hotKey = nil
+    }
 }
 
 /// Lets the SwiftUI Settings view reach the controllers created in AppDelegate.
@@ -79,4 +85,12 @@ final class HotkeyController {
 enum HotkeyAccess {
     static var compose: HotkeyController?
     static var read: HotkeyController?
+    static var preview: HotkeyController?
+}
+
+/// Bridge so the SwiftUI Settings view can ask AppDelegate to re-apply hotkey
+/// registration after a preview setting changes (no relaunch needed).
+@MainActor
+enum PreviewControl {
+    static var onSettingsChanged: (() -> Void)?
 }
