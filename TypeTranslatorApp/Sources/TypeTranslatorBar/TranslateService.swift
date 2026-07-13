@@ -59,7 +59,7 @@ final class TranslateService {
         armWatchdog()
 
         let pb = NSPasteboard.general
-        let saved = pb.string(forType: .string)
+        let saved = snapshotPasteboard(pb)
 
         // Copy whatever is CURRENTLY selected first — don't select-all yet. If the
         // user selected a sentence, this grabs just that. Only if nothing is
@@ -101,7 +101,7 @@ final class TranslateService {
         armWatchdog()
 
         let pb = NSPasteboard.general
-        let saved = pb.string(forType: .string)
+        let saved = snapshotPasteboard(pb)
         let cursor = NSEvent.mouseLocation
         let before = pb.changeCount
         postCommandKey(CGKeyCode(kVK_ANSI_C))
@@ -126,7 +126,7 @@ final class TranslateService {
 
     /// Forward-translate the clipboard English, back-translate for reassurance,
     /// then show the preview. Paste only happens on confirm.
-    private func previewClipboard(pb: NSPasteboard, saved: String?, at cursor: NSPoint) {
+    private func previewClipboard(pb: NSPasteboard, saved: [NSPasteboardItem], at cursor: NSPoint) {
         let english = pb.string(forType: .string) ?? ""
         guard !english.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             finish(status: "∅", restore: saved, to: pb, after: 0.1)
@@ -188,7 +188,7 @@ final class TranslateService {
     }
 
     /// Translate whatever text is now on the clipboard, then paste it back.
-    private func translateClipboard(pb: NSPasteboard, saved: String?) {
+    private func translateClipboard(pb: NSPasteboard, saved: [NSPasteboardItem]) {
         let english = pb.string(forType: .string) ?? ""
         guard !english.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             finish(status: "∅", restore: saved, to: pb, after: 0.1)
@@ -223,7 +223,7 @@ final class TranslateService {
         armWatchdog()
 
         let pb = NSPasteboard.general
-        let saved = pb.string(forType: .string)
+        let saved = snapshotPasteboard(pb)
         let cursor = NSEvent.mouseLocation
         let before = pb.changeCount
         postCommandKey(CGKeyCode(kVK_ANSI_C))   // copy selection only (no select-all)
@@ -261,10 +261,9 @@ final class TranslateService {
     }
 
     /// Read mode never pastes, so restore the clipboard immediately.
-    private func finishRead(status: String, restore saved: String?, to pb: NSPasteboard) {
+    private func finishRead(status: String, restore saved: [NSPasteboardItem], to pb: NSPasteboard) {
         onStatus?(status)
-        pb.clearContents()
-        if let saved { pb.setString(saved, forType: .string) }
+        restorePasteboard(saved, to: pb)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             self?.busy = false
             self?.onStatus?("")
@@ -341,11 +340,38 @@ final class TranslateService {
         }
     }
 
-    private func finish(status: String, restore saved: String?, to pb: NSPasteboard, after: TimeInterval) {
+    /// Snapshot the ENTIRE clipboard (all items, all concrete types) so a
+    /// translation can restore whatever the user had copied — an image, a file,
+    /// styled text — not just plain text. Items are deep-copied into fresh
+    /// NSPasteboardItems because the originals can't be re-added to a pasteboard.
+    /// Promised/lazy data returns nil and is skipped (its bytes don't exist yet).
+    private func snapshotPasteboard(_ pb: NSPasteboard) -> [NSPasteboardItem] {
+        var copies: [NSPasteboardItem] = []
+        for item in pb.pasteboardItems ?? [] {
+            let copy = NSPasteboardItem()
+            var wroteAnything = false
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                    wroteAnything = true
+                }
+            }
+            if wroteAnything { copies.append(copy) }
+        }
+        return copies
+    }
+
+    /// Restore a snapshot taken by `snapshotPasteboard`. An empty snapshot simply
+    /// leaves the clipboard cleared (matching the prior "nothing to restore" case).
+    private func restorePasteboard(_ items: [NSPasteboardItem], to pb: NSPasteboard) {
+        pb.clearContents()
+        if !items.isEmpty { pb.writeObjects(items) }
+    }
+
+    private func finish(status: String, restore saved: [NSPasteboardItem], to pb: NSPasteboard, after: TimeInterval) {
         onStatus?(status)
-        DispatchQueue.main.asyncAfter(deadline: .now() + after) {
-            pb.clearContents()
-            if let saved { pb.setString(saved, forType: .string) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + after) { [weak self] in
+            self?.restorePasteboard(saved, to: pb)
         }
         // Clear the transient glyph shortly after.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
