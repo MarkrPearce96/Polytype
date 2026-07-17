@@ -360,6 +360,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if meter.hasNotified || used >= meter.cap {
             statusDot?.layer?.backgroundColor = NSColor.systemGray.cgColor
             statusLabel?.stringValue = "Free limit reached — on Apple until \(MeterAccess.resetDateString())"
+            // Clear the text as well as hiding it: a hidden NSTextField keeps the
+            // intrinsic width of its stringValue, and its leading constraint stays
+            // active — a stale count would reserve space and truncate this message,
+            // which is the one string that must always be readable in full.
+            statusCount?.stringValue = ""
             statusCount?.isHidden = true
             statusBar?.fraction = 1
             statusBar?.isSpent = true
