@@ -64,8 +64,8 @@ which `install-bar.sh` handles.)
 
 - **Compose a message** (⌥⌘T, default): type it, press the hotkey — the whole
   field is translated to your selected target language (default Traditional
-  Chinese) and pasted back. Change the target language in **譯 → Compose
-  language**.
+  Chinese) and pasted back. Change the target language from the **Compose** card
+  in the 譯 menu.
 - **Existing document** (select first): **select** the text you want translated,
   then press the hotkey — only the selection is replaced.
 - **Preview before sending (optional):** turn on **Settings → Preview → "Preview
@@ -79,8 +79,8 @@ which `install-bar.sh` handles.)
 - **Read a message** (⌥⌘R, default): select any text on your screen (in a
   message, web page, PDF, etc.), press the hotkey — a small popup near your cursor
   shows the English translation. Nothing is changed or pasted; it's read-only. Change
-  the source language in **譯 → Read language** (default Auto-detect, which requires
-  internet; pick a specific language to work fully offline). If nothing is selected,
+  the source language from the **Read** card in the 譯 menu (default Auto-detect,
+  which requires internet; pick a specific language to work fully offline). If nothing is selected,
   the app beeps.
 - **Available languages:** Traditional Chinese, Simplified Chinese, Japanese,
   Korean, Spanish, French, German, Thai, Vietnamese.
