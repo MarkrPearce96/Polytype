@@ -60,10 +60,15 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
         onDidHide?()
     }
 
-    /// Swaps the panel's whole content (menu ↔ settings).
+    /// Swaps the panel's whole content (menu ↔ settings) with a quick
+    /// crossfade and an animated resize — this is a deliberate transition the
+    /// user chooses (clicking "Settings…" or the back arrow), unlike opening
+    /// the panel or expanding a field's list, so it's worth the extra beat
+    /// rather than snapping instantly.
     func setContent(_ view: NSView) {
-        shellView.setContent(view)
-        if window.isVisible { applyFrame(forContentSize: shellView.fittingSize) }
+        let animate = window.isVisible
+        shellView.setContent(view, animated: animate)
+        if animate { applyFrame(forContentSize: shellView.fittingSize, animated: true) }
     }
 
     /// Call after content inside the *current* view changes size (a field's
@@ -71,7 +76,7 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     /// fixed top-right anchor instead of the content just overflowing it.
     func invalidateSize() {
         guard window.isVisible else { return }
-        applyFrame(forContentSize: shellView.fittingSize)
+        applyFrame(forContentSize: shellView.fittingSize, animated: false)
     }
 
     private func computeAnchor(near button: NSStatusBarButton?) {
@@ -84,13 +89,22 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
         anchorTopRight = NSPoint(x: buttonFrameOnScreen.maxX, y: buttonFrameOnScreen.minY - 4)
     }
 
-    private func applyFrame(forContentSize size: NSSize) {
+    private func applyFrame(forContentSize size: NSSize, animated: Bool = false) {
         var origin = NSPoint(x: anchorTopRight.x - size.width, y: anchorTopRight.y - size.height)
         if let screenFrame = (window.screen ?? NSScreen.main)?.visibleFrame {
             origin.x = max(screenFrame.minX + 8, min(origin.x, screenFrame.maxX - size.width - 8))
             origin.y = max(screenFrame.minY + 8, origin.y)
         }
-        window.setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
+        let newFrame = NSRect(origin: origin, size: size)
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                window.animator().setFrame(newFrame, display: true)
+            }
+        } else {
+            window.setFrame(newFrame, display: true, animate: false)
+        }
     }
 
     /// Dismiss the instant something else becomes key — clicking anywhere
@@ -147,12 +161,28 @@ final class GradientPanelView: NSView {
     /// content down to zero to match, and the size computed from it would
     /// then also be zero. A plain frame, set once from the content's own
     /// natural size, breaks that cycle.
-    func setContent(_ view: NSView) {
-        contentView?.removeFromSuperview()
+    func setContent(_ view: NSView, animated: Bool = false) {
+        let oldView = contentView
         contentView = view
         view.translatesAutoresizingMaskIntoConstraints = true
         view.frame = NSRect(origin: .zero, size: naturalSize(of: view))
+
+        guard animated, let oldView else {
+            oldView?.removeFromSuperview()
+            addSubview(view)
+            return
+        }
+
+        view.alphaValue = 0
         addSubview(view)
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            oldView.animator().alphaValue = 0
+            view.animator().alphaValue = 1
+        }, completionHandler: {
+            oldView.removeFromSuperview()
+        })
     }
 
     private func naturalSize(of view: NSView) -> NSSize {
