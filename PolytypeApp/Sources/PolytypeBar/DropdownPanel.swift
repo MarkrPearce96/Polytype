@@ -171,7 +171,13 @@ final class GradientPanelView: NSView {
     /// this view's actual bounds on every frame of the window's resize
     /// animation, not just at the start and end — means the extra content
     /// stays hidden until the window has genuinely grown enough to show it.
-    private let clipView = NSView()
+    /// Flipped so the content it holds (also positioned at local origin
+    /// (0,0)) anchors to its *top* regardless of its current height — the
+    /// same reasoning as `VerticalRowStack` being flipped: growth should
+    /// come from the bottom, revealed as the panel grows, not require the
+    /// top content to shift to compensate for a size that hasn't caught up
+    /// with the animation yet.
+    private let clipView = FlippedContainerView()
     private var contentView: NSView?
     var onEscape: (() -> Void)?
 
@@ -272,9 +278,21 @@ protocol ExplicitlySized: NSView {
 /// mix well with the frame-based custom views already used throughout this
 /// menu (`MenuCardView`, `LanguageRow`, the status row). Rows keep whatever
 /// height they were constructed with; only their y-position and width change
-/// here. `rows[0]` renders at the top, matching reading order, even though
-/// AppKit's coordinate origin is bottom-left.
+/// here.
+///
+/// Flipped (`isFlipped == true`) so `rows[0]` sits at local y=0 — genuinely
+/// the top, not "the bottom, in a coordinate system some outer math has to
+/// cancel out." That matters here specifically: the panel grows *downward
+/// from a fixed top*, so a row's position must never depend on the total
+/// stack height, or every row above wherever something was inserted would
+/// need to shift to compensate — relying on that shift landing in perfect
+/// lockstep with the window's own (separate) resize animation. In a flipped,
+/// top-anchored layout, a row's position only depends on the rows *before*
+/// it, so inserting or removing rows anywhere never moves anything above the
+/// change point at all — nothing to keep in sync, because nothing there
+/// needs to move.
 final class VerticalRowStack: NSView, ExplicitlySized {
+    override var isFlipped: Bool { true }
     private(set) var rows: [NSView] = []
     var rowWidth: CGFloat = 300 { didSet { relayout(animated: false) } }
 
@@ -331,7 +349,7 @@ final class VerticalRowStack: NSView, ExplicitlySized {
     private func relayout(animated: Bool) {
         var y: CGFloat = 0
         var targets: [(row: NSView, rect: NSRect)] = []
-        for row in rows.reversed() {
+        for row in rows {
             let h = row.frame.height
             targets.append((row, NSRect(x: 0, y: y, width: rowWidth, height: h)))
             y += h
@@ -415,4 +433,12 @@ final class FooterRow: NSButton {
     }
     override func mouseEntered(with event: NSEvent) { isHovering = true }
     override func mouseExited(with event: NSEvent) { isHovering = false }
+}
+
+/// A plain container whose local origin (0,0) is its top-left instead of
+/// AppKit's default bottom-left — see `GradientPanelView.clipView` and
+/// `VerticalRowStack` for why that's what a top-anchored, growing-downward
+/// panel actually needs.
+final class FlippedContainerView: NSView {
+    override var isFlipped: Bool { true }
 }
