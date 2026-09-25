@@ -157,6 +157,21 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
 /// non-rectangular shape). Hosts whichever content view is currently active.
 final class GradientPanelView: NSView {
     private let fillLayer = CAGradientLayer()
+    /// Holds the fill + content, clipped to this view's own bounds. Kept
+    /// separate from the root layer (which only casts the shadow) so it can
+    /// mask content to bounds without also cutting the shadow off — and,
+    /// critically, so content is only ever visible within the panel's
+    /// *current* on-screen size. Content views (a `VerticalRowStack`, an
+    /// `NSHostingView`) are resized to their new target size as soon as a
+    /// change starts, ahead of the window's own resize animation catching up
+    /// — without this clip, that meant a newly-expanded field's rows briefly
+    /// existed at full size before the window had animated open to reveal
+    /// them, reading as an initial "jump" before the smooth part took over.
+    /// Clipping to `clipView`'s bounds — which `layout()` keeps in sync with
+    /// this view's actual bounds on every frame of the window's resize
+    /// animation, not just at the start and end — means the extra content
+    /// stays hidden until the window has genuinely grown enough to show it.
+    private let clipView = NSView()
     private var contentView: NSView?
     var onEscape: (() -> Void)?
 
@@ -164,11 +179,18 @@ final class GradientPanelView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         // Shadow lives on this view's own root layer (unclipped) so it isn't
-        // cut off by the rounded-corner mask below, which is on a sublayer.
+        // cut off by the rounded-corner mask below.
         layer?.shadowColor = NSColor.black.cgColor
         layer?.shadowOpacity = 0.35
         layer?.shadowRadius = 26
         layer?.shadowOffset = CGSize(width: 0, height: -10)
+
+        clipView.wantsLayer = true
+        clipView.layer?.cornerRadius = 12
+        clipView.layer?.masksToBounds = true
+        clipView.layer?.borderWidth = 1
+        clipView.layer?.borderColor = NSColor.white.withAlphaComponent(0.06).cgColor
+        addSubview(clipView)
 
         fillLayer.colors = [
             NSColor(srgbRed: 34/255, green: 49/255, blue: 66/255, alpha: 1).cgColor,
@@ -176,29 +198,27 @@ final class GradientPanelView: NSView {
         ]
         fillLayer.startPoint = CGPoint(x: 0.5, y: 1)
         fillLayer.endPoint = CGPoint(x: 0.5, y: 0)
-        fillLayer.cornerRadius = 12
-        fillLayer.masksToBounds = true
-        fillLayer.borderWidth = 1
-        fillLayer.borderColor = NSColor.white.withAlphaComponent(0.06).cgColor
-        layer?.addSublayer(fillLayer)
+        clipView.layer?.addSublayer(fillLayer)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func layout() {
         super.layout()
-        fillLayer.frame = bounds
+        clipView.frame = bounds
+        fillLayer.frame = clipView.bounds
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 12, cornerHeight: 12, transform: nil)
     }
 
-    /// Deliberately NOT Auto Layout constraints pinning the content to this
-    /// view's edges: this view's own size is computed *from* the content's
-    /// natural size (see `fittingSize`/`DropdownPanel.applyFrame`), so
-    /// constraining the content to fill this view back would be circular —
-    /// on first show, before the window has ever been sized, this view's
-    /// bounds start at zero, the constraints would immediately force the
-    /// content down to zero to match, and the size computed from it would
-    /// then also be zero. A plain frame, set once from the content's own
-    /// natural size, breaks that cycle.
+    /// Deliberately NOT Auto Layout constraints pinning the content to
+    /// `clipView`'s edges: this view's own size is computed *from* the
+    /// content's natural size (see `fittingSize`/`DropdownPanel.applyFrame`),
+    /// so constraining the content to fill it back would be circular — on
+    /// first show, before the window has ever been sized, bounds start at
+    /// zero, the constraints would immediately force the content down to
+    /// zero to match, and the size computed from it would then also be zero.
+    /// A plain frame, set once from the content's own natural size, breaks
+    /// that cycle; `clipView`'s masking (above) is what keeps oversized
+    /// content from being visible before the window grows to fit it.
     func setContent(_ view: NSView, animated: Bool = false) {
         let oldView = contentView
         contentView = view
@@ -207,12 +227,12 @@ final class GradientPanelView: NSView {
 
         guard animated, let oldView else {
             oldView?.removeFromSuperview()
-            addSubview(view)
+            clipView.addSubview(view)
             return
         }
 
         view.alphaValue = 0
-        addSubview(view)
+        clipView.addSubview(view)
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
