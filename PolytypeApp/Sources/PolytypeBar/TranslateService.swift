@@ -305,9 +305,9 @@ final class TranslateService {
         let alert = NSAlert()
         alert.messageText = "Accessibility permission needed"
         alert.informativeText = """
-            Type Translator needs Accessibility access to read and replace the \
+            Polytype needs Accessibility access to read and replace the \
             selected text. Open System Settings ▸ Privacy & Security ▸ \
-            Accessibility and enable “TypeTranslatorBar”, then try again.
+            Accessibility and enable “PolytypeBar”, then try again.
             """
         alert.addButton(withTitle: "Open Settings")
         alert.addButton(withTitle: "Later")

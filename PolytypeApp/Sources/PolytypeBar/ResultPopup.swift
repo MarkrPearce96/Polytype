@@ -51,7 +51,7 @@ final class ResultPopup {
         newPanel.hasShadow = true
         newPanel.backgroundColor = .clear
         newPanel.isOpaque = false
-        // Intentionally not dismissing on app deactivation: Type Translator is a
+        // Intentionally not dismissing on app deactivation: Polytype is a
         // non-activating background menu-bar app, so it's essentially never the
         // "active" app and there's no meaningful deactivation event to key off
         // of. The popup should stay visible while the user keeps working in the

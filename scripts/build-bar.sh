@@ -5,12 +5,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN_NAME="TypeTranslatorBar"
-APP="$ROOT/build/Type Translator.app"
+BIN_NAME="PolytypeBar"
+APP="$ROOT/build/Polytype.app"
 
 echo "==> Building executable (release)…"
-swift build -c release --package-path "$ROOT/TypeTranslatorApp" --product "$BIN_NAME"
-BIN="$ROOT/TypeTranslatorApp/.build/release/$BIN_NAME"
+swift build -c release --package-path "$ROOT/PolytypeApp" --product "$BIN_NAME"
+BIN="$ROOT/PolytypeApp/.build/release/$BIN_NAME"
 
 echo "==> Assembling bundle at ${APP}"
 rm -rf "$APP"
@@ -20,7 +20,7 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # App icon (Finder/Dock). The menu-bar icon uses the system "globe" template
 # symbol at runtime, so no menu-bar image is bundled.
-cp "$ROOT/TypeTranslatorApp/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "$ROOT/PolytypeApp/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -28,11 +28,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleExecutable</key><string>TypeTranslatorBar</string>
-    <key>CFBundleIdentifier</key><string>com.typetranslator.bar</string>
+    <key>CFBundleExecutable</key><string>PolytypeBar</string>
+    <key>CFBundleIdentifier</key><string>com.polytype.bar</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>Type Translator</string>
-    <key>CFBundleDisplayName</key><string>Type Translator</string>
+    <key>CFBundleName</key><string>Polytype</string>
+    <key>CFBundleDisplayName</key><string>Polytype</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIconName</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>

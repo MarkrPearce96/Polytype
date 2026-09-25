@@ -1,4 +1,4 @@
-# Type Translator
+# Polytype
 
 A macOS menu-bar app that translates text in place. Type a message in any app,
 press a hotkey, and the text is replaced with the translation — ready to send.
@@ -39,8 +39,7 @@ see a **譯** icon in the menu bar.
 
 The hotkey needs to read and replace text via synthesized keystrokes:
 
-**System Settings → Privacy & Security → Accessibility →** enable **Type
-Translator**.
+**System Settings → Privacy & Security → Accessibility →** enable **Polytype**.
 
 ### 3. Add a Google Cloud Translation API key (free tier: 500,000 chars/month)
 
@@ -102,7 +101,7 @@ which `install-bar.sh` handles.)
   - `GoogleEngine`, `AppleEngine` (on-device), and the older `DeepLEngine`
   - `FallbackChain` — primary engine with automatic fallback
   - `SecretStore` / `KeychainSecretStore`, `HTTPClient`, timeout helpers
-- `TypeTranslatorApp/` — the `TypeTranslatorBar` menu-bar executable:
+- `PolytypeApp/` — the `PolytypeBar` menu-bar executable:
   global hotkey, clipboard-swap translate-in-place, settings, login item.
 - `scripts/build-bar.sh` — build + assemble + sign the `.app`.
 - `scripts/install-bar.sh` — build and install to `/Applications`.

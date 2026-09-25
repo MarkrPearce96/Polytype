@@ -28,7 +28,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             w.contentViewController = hosting
         } else {
             let w = NSWindow(contentViewController: hosting)
-            w.title = "Set Up Type Translator"
+            w.title = "Set Up Polytype"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
             w.delegate = self
@@ -124,7 +124,7 @@ struct SetupView: View {
     private var welcomeStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             icon("globe")
-            Text("Welcome to Type Translator").font(.title2.weight(.semibold))
+            Text("Welcome to Polytype").font(.title2.weight(.semibold))
             Text("Type a message in English in any app, press a hotkey, and it's replaced with the translation — ready to send. Let's get you set up.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Spacer()
@@ -136,7 +136,7 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 14) {
             icon("lock.shield")
             Text("Grant Accessibility access").font(.title2.weight(.semibold))
-            Text("The hotkey needs permission to read and replace your selected text. Click below, then enable Type Translator in the list.")
+            Text("The hotkey needs permission to read and replace your selected text. Click below, then enable Polytype in the list.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Open Accessibility settings") {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {

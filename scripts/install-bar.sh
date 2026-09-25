@@ -4,13 +4,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$ROOT/build/Type Translator.app"
-DEST="/Applications/Type Translator.app"
+APP="$ROOT/build/Polytype.app"
+DEST="/Applications/Polytype.app"
 
 "$ROOT/scripts/build-bar.sh"
 
 echo "==> Installing to $DEST"
-killall TypeTranslatorBar 2>/dev/null || true
+killall PolytypeBar 2>/dev/null || true
 if rm -rf "$DEST" 2>/dev/null && cp -R "$APP" "$DEST" 2>/dev/null; then
     echo "    installed"
 else
@@ -19,8 +19,8 @@ else
     sudo cp -R "$APP" "$DEST"
 fi
 
-# Remove the freshly-built copy so it doesn't linger as a second "Type
-# Translator" in Spotlight/Launchpad — the installed /Applications copy is canonical.
+# Remove the freshly-built copy so it doesn't linger as a second "Polytype"
+# in Spotlight/Launchpad — the installed /Applications copy is canonical.
 rm -rf "$APP"
 
 echo "==> Launching from /Applications"

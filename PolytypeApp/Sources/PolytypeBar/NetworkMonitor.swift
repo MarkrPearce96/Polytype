@@ -8,7 +8,7 @@ import Network
 @MainActor
 final class NetworkMonitor {
     private let monitor = NWPathMonitor()
-    private let queue = DispatchQueue(label: "com.typetranslator.network")
+    private let queue = DispatchQueue(label: "com.polytype.network")
     private var lastOnline: Bool?
 
     /// Current connectivity, updated on the main actor. Defaults to online so the

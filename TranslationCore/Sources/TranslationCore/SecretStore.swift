@@ -27,7 +27,7 @@ public final class InMemorySecretStore: SecretStore, @unchecked Sendable {
 /// Keychain-backed store (generic password). Verified manually in the app.
 public final class KeychainSecretStore: SecretStore, @unchecked Sendable {
     private let service: String
-    public init(service: String = "com.typetranslator.secrets") { self.service = service }
+    public init(service: String = "com.polytype.secrets") { self.service = service }
 
     private func query(_ key: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,

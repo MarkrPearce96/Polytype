@@ -171,7 +171,7 @@ struct SettingsView: View {
                 .font(.system(size: 34, weight: .semibold))
                 .foregroundStyle(brand)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Type Translator").font(.title2.weight(.semibold))
+                Text("Polytype").font(.title2.weight(.semibold))
                 Text("Translate as you type, in any app")
                     .font(.subheadline).foregroundStyle(.secondary)
             }
@@ -221,7 +221,7 @@ final class SettingsWindowController {
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView())
             let w = NSWindow(contentViewController: hosting)
-            w.title = "Type Translator Settings"
+            w.title = "Polytype Settings"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
             window = w

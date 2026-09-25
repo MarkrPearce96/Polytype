@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "TypeTranslatorApp",
+    name: "PolytypeApp",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(path: "../TranslationCore"),
@@ -11,7 +11,7 @@ let package = Package(
         // Menu-bar + global-hotkey app: type in any app, press the hotkey, and
         // the text is translated in place. Uses TranslationCore for the engines.
         .executableTarget(
-            name: "TypeTranslatorBar",
+            name: "PolytypeBar",
             dependencies: [
                 .product(name: "TranslationCore", package: "TranslationCore"),
             ]

@@ -209,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The colorful globe remains the app (Finder/Dock) icon. We use the system
         // "globe" symbol directly, which is already a crisp template at any size.
         let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-        guard let icon = NSImage(systemSymbolName: "globe", accessibilityDescription: "Type Translator")?
+        guard let icon = NSImage(systemSymbolName: "globe", accessibilityDescription: "Polytype")?
             .withSymbolConfiguration(config) else { return false }
         icon.isTemplate = true
         statusItem.button?.image = icon
