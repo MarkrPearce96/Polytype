@@ -11,9 +11,6 @@ struct SettingsView: View {
     @State private var composeDisplay: String = HotkeyAccess.compose?.display ?? "⌥⌘T"
     @State private var readDisplay: String = HotkeyAccess.read?.display ?? "⌥⌘R"
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
-    @State private var previewEnabled: Bool = false                       // seeded in .onAppear
-    @State private var previewUsesComposeHotkey: Bool = false             // seeded in .onAppear
-    @State private var previewDisplay: String = "⌥⇧⌘T"                    // seeded in .onAppear
     @State private var usageInput: String = "0"   // seeded from the meter in .onAppear
     @State private var renewDate: Date = Date()   // seeded from the meter in .onAppear
 
@@ -81,36 +78,6 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Preview") {
-                    Toggle("Preview before inserting", isOn: $previewEnabled)
-                        .onChange(of: previewEnabled) { _, on in
-                            LanguagePrefs.previewEnabled = on
-                            PreviewControl.onSettingsChanged?()
-                            status = on ? "Preview on — Compose will show a confirm step."
-                                        : "Preview off — Compose inserts instantly."
-                        }
-                    if previewEnabled {
-                        Picker("Trigger", selection: $previewUsesComposeHotkey) {
-                            Text("Separate hotkey").tag(false)
-                            Text("Use my Compose hotkey").tag(true)
-                        }
-                        .onChange(of: previewUsesComposeHotkey) { _, useCompose in
-                            LanguagePrefs.previewUsesComposeHotkey = useCompose
-                            PreviewControl.onSettingsChanged?()
-                        }
-                        if !previewUsesComposeHotkey {
-                            LabeledContent("Preview shortcut") {
-                                HotkeyRecorder(current: previewDisplay) { keyCode, mods, display in
-                                    if HotkeyAccess.preview?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
-                                        previewDisplay = display; status = "Preview shortcut set to \(display)."
-                                    } else { status = "That shortcut is already in use — try another." }
-                                }.frame(width: 132, height: 24)
-                            }
-                        }
-                        caption("Shows the translation and what it means back in English before inserting. Return inserts; Esc cancels. The back-check prefers Apple's free on-device engine (macOS 15 with the language downloaded), so it usually doesn't count against your Google free tier; otherwise it falls back to Google.")
-                    }
-                }
-
                 Section("Usage") {
                     Text(usageSummary).font(.callout)
                     Button("View exact usage in Google Cloud →") {
@@ -148,6 +115,10 @@ struct SettingsView: View {
                                 status = newValue ? "Will start automatically at login." : "Won't start at login."
                             }
                         }
+                    Button("Setup Assistant…") {
+                        SetupWindowController.shared.show()
+                    }
+                    caption("Re-run the first-launch walkthrough (Accessibility, API key, language, shortcuts).")
                 }
             }
             .formStyle(.grouped)
@@ -159,9 +130,6 @@ struct SettingsView: View {
             key = secrets.get(googleKeyName) ?? ""
             renewDate = MeterAccess.meter?.nextResetDate ?? Date()
             usageInput = String(MeterAccess.meter?.used ?? 0)   // 0 for a fresh setup
-            previewEnabled = LanguagePrefs.previewEnabled
-            previewUsesComposeHotkey = LanguagePrefs.previewUsesComposeHotkey
-            previewDisplay = HotkeyAccess.preview?.display ?? "⌥⇧⌘T"
         }
     }
 

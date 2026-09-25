@@ -13,9 +13,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let defaultTitle = "譯"
     private var composeHotkey: HotkeyController!
     private var readHotkey: HotkeyController!
-    private var previewHotkey: HotkeyController!
-    private var composeLangMenu: NSMenu!
-    private var readLangMenu: NSMenu!
+    private var menu: NSMenu!
+    private var composeItem: NSMenuItem!
+    private var readCardItem: NSMenuItem!
+
+    /// The four independently-editable language fields, each with its own
+    /// inline row list, its own click target (a `DirectionChip` inside the
+    /// owning card), and its own anchor item it's inserted below when
+    /// expanded — these replace what a card's native `.submenu` used to be,
+    /// since a real NSMenuItem submenu can only ever open on hover, never on
+    /// a deliberate click, and a single submenu can't disambiguate "which of
+    /// this card's two fields am I changing."
+    private enum Field { case composeSource, composeTarget, readSource, readTarget }
+    private var fieldItems: [Field: [NSMenuItem]] = [:]
+    private var expandedField: Field?
+    /// Exactly the items currently inserted into `menu` for `expandedField` —
+    /// a filtered subset of `fieldItems[expandedField]` (the language already
+    /// chosen on the other side of the same card is left out), tracked
+    /// separately so collapse only ever removes items that are actually there.
+    private var expandedItems: [NSMenuItem] = []
+
     private var composeCard: MenuCardView!
     private var readCard: MenuCardView!
     private var statusDot: NSView!
@@ -45,9 +62,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             engine = gated   // macOS 14: no Apple fallback; over-cap fails closed (never charged)
         }
-        var backEngine: TranslationEngine? = nil
-        if #available(macOS 15, *) { backEngine = AppleEngine() }
-        service = TranslateService(engine: engine, fallbackFlag: flag, backTranslateEngine: backEngine)
+        service = TranslateService(engine: engine, fallbackFlag: flag)
+
+        // A fresh launch prefers Auto-detect over carrying a manual pick from
+        // last session forward — but only when Google looks reachable (offline,
+        // Auto-detect can't work anyway, so leave whatever was there).
+        // `networkMonitor.isOnline` defaults true until the first real path
+        // update arrives, which is the right optimistic assumption here too.
+        if networkMonitor.isOnline {
+            LanguagePrefs.readSourceCode = Languages.autoCode
+            LanguagePrefs.readSourceOverride = nil
+            LanguagePrefs.composeSourceCode = Languages.autoCode
+            LanguagePrefs.composeSourceOverride = nil
+        }
 
         // Both hotkeys are created before the menu below, since the menu items
         // display each one's current combo.
@@ -57,10 +84,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defaultKeyCode: UInt32(kVK_ANSI_R), defaultModifiers: UInt32(cmdKey | optionKey), defaultDisplay: "⌥⌘R")
         HotkeyAccess.compose = composeHotkey
         HotkeyAccess.read = readHotkey
-        previewHotkey = HotkeyController(id: "preview",
-            defaultKeyCode: UInt32(kVK_ANSI_T),
-            defaultModifiers: UInt32(cmdKey | optionKey | shiftKey), defaultDisplay: "⌥⇧⌘T")
-        HotkeyAccess.preview = previewHotkey
 
         // Menu-bar item — our app icon, with a transient status glyph beside it
         // during a translation ("…", "✓", "⚠").
@@ -76,39 +99,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        let menu = NSMenu()
+        menu = NSMenu()
 
-        // Two direction cards. Each owns its language list as a submenu — hovering
-        // the card opens it. Translation itself is hotkey-driven.
-        composeLangMenu = NSMenu()
-        for lang in Languages.all {
-            let item = NSMenuItem(title: lang.name, action: #selector(selectComposeLanguage(_:)), keyEquivalent: "")
-            item.representedObject = lang.code
-            item.target = self
-            composeLangMenu.addItem(item)
-        }
+        // Two direction cards, each with an independent source and target
+        // field. Both fields on both cards may be Auto-detect on the source
+        // side; clicking either field's name expands just that field's list
+        // inline below the card. Translation itself is hotkey-driven.
+        fieldItems[.composeSource] = buildFieldItems(includeAutoDetect: true) { [weak self] in self?.applyComposeSource($0) }
+        fieldItems[.composeTarget] = buildFieldItems(includeAutoDetect: false) { [weak self] in self?.applyComposeTarget($0) }
         composeCard = MenuCardView(caption: "Compose", shortcut: composeHotkey.display)
-        let composeItem = NSMenuItem()
+        composeCard.onSwap = { [weak self] in
+            LanguagePrefs.swapCompose()
+            self?.refreshLanguageMenus()
+        }
+        composeCard.onSourceClicked = { [weak self] in self?.toggle(.composeSource) }
+        composeCard.onTargetClicked = { [weak self] in self?.toggle(.composeTarget) }
+        composeItem = NSMenuItem()
         composeItem.view = composeCard
-        composeItem.submenu = composeLangMenu
         menu.addItem(composeItem)
 
-        readLangMenu = NSMenu()
-        let autoItem = NSMenuItem(title: "Auto-detect", action: #selector(selectReadLanguage(_:)), keyEquivalent: "")
-        autoItem.representedObject = Languages.autoCode
-        autoItem.target = self
-        readLangMenu.addItem(autoItem)
-        readLangMenu.addItem(.separator())
-        for lang in Languages.all {
-            let item = NSMenuItem(title: lang.name, action: #selector(selectReadLanguage(_:)), keyEquivalent: "")
-            item.representedObject = lang.code
-            item.target = self
-            readLangMenu.addItem(item)
-        }
+        fieldItems[.readSource] = buildFieldItems(includeAutoDetect: true) { [weak self] in self?.applyReadSource($0) }
+        fieldItems[.readTarget] = buildFieldItems(includeAutoDetect: false) { [weak self] in self?.applyReadTarget($0) }
         readCard = MenuCardView(caption: "Read", shortcut: readHotkey.display)
-        let readCardItem = NSMenuItem()
+        readCard.onSwap = { [weak self] in
+            LanguagePrefs.swapReadDirection()
+            self?.refreshLanguageMenus()
+        }
+        readCard.onSourceClicked = { [weak self] in self?.toggle(.readSource) }
+        readCard.onTargetClicked = { [weak self] in self?.toggle(.readTarget) }
+        readCardItem = NSMenuItem()
         readCardItem.view = readCard
-        readCardItem.submenu = readLangMenu
         menu.addItem(readCardItem)
 
         menu.addItem(.separator())
@@ -119,8 +139,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(settingsItem)
-        let setupItem = NSMenuItem(title: "Setup Assistant…", action: #selector(openSetup), keyEquivalent: "")
-        menu.addItem(setupItem)
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         menu.addItem(quitItem)
 
@@ -130,17 +148,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         service.onEngineUsed = { [weak self] name in
             self?.lastEngineUsed = name
+            self?.reconcileGoogleHealth()
             self?.updateStatusRow()
         }
 
-        // Global hotkeys (defaults ⌥⌘T / ⌥⌘R / ⌥⇧⌘T; changeable in Settings).
+        // Global hotkeys (defaults ⌥⌘T / ⌥⌘R; changeable in Settings).
         composeHotkey.action = { [weak self] in self?.translateNow() }
         composeHotkey.onChange = { [weak self] _ in self?.refreshLanguageMenus() }
         readHotkey.action = { [weak self] in self?.readNow() }
         readHotkey.onChange = { [weak self] _ in self?.refreshLanguageMenus() }
-        previewHotkey.action = { [weak self] in self?.previewNow() }
-        previewHotkey.onChange = { [weak self] _ in self?.refreshLanguageMenus() }
-        PreviewControl.onSettingsChanged = { [weak self] in self?.applyHotkeyRegistration() }
         applyHotkeyRegistration()
 
         // Ask for Accessibility up front so the first hotkey press isn't a no-op.
@@ -184,20 +200,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleNetworkChange(online: Bool) {
-        if !online {
-            // Offline: auto-detect can't work, so translate from the last specific
-            // language via a temporary override (the saved preference is untouched).
-            if LanguagePrefs.readSourceCode == Languages.autoCode {
+        // Clear a stale failure so the status light doesn't stay orange after
+        // connectivity returns — reconcileGoogleHealth (below) handles the rest.
+        if online, lastEngineUsed == "failed" { lastEngineUsed = nil }
+        reconcileGoogleHealth()
+        updateStatusRow()
+    }
+
+    /// Best-effort read on whether Google Translate is currently usable —
+    /// combines raw network reachability with the outcome of the last real
+    /// translation attempt (reactive: no extra network calls or quota spent
+    /// purely for health-checking).
+    private var googleHealthy: Bool {
+        networkMonitor.isOnline && lastEngineUsed != "apple" && lastEngineUsed != "failed"
+    }
+
+    /// Keeps each card's Auto-detect override in sync with Google's health:
+    /// substitutes a concrete language when Google breaks (same as before, now
+    /// driven by Google's actual health rather than just raw connectivity), and
+    /// clears the substitution the moment Google's healthy again — which reverts
+    /// to Auto-detect exactly when the standing preference is still "auto" (see
+    /// `applyComposeSource`/`applyReadSource`: a pick made *during* an outage
+    /// lands there; one made while healthy becomes the new standing preference
+    /// instead, and is untouched by this).
+    private func reconcileGoogleHealth() {
+        if googleHealthy {
+            LanguagePrefs.readSourceOverride = nil
+            LanguagePrefs.composeSourceOverride = nil
+        } else {
+            if LanguagePrefs.readSourceCode == Languages.autoCode && LanguagePrefs.readSourceOverride == nil {
                 LanguagePrefs.readSourceOverride = LanguagePrefs.lastSpecificReadCode
             }
-        } else {
-            // Back online: drop any offline override, and clear a stale failure so
-            // the light doesn't stay orange after connectivity returns.
-            LanguagePrefs.readSourceOverride = nil
-            if lastEngineUsed == "failed" { lastEngineUsed = nil }
+            if LanguagePrefs.composeSourceCode == Languages.autoCode && LanguagePrefs.composeSourceOverride == nil {
+                LanguagePrefs.composeSourceOverride = LanguagePrefs.lastSpecificComposeSourceCode
+            }
         }
         refreshLanguageMenus()
-        updateStatusRow()
     }
 
     /// Put our colored app icon in the menu bar. Returns false if the image
@@ -217,32 +255,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// The Compose action (hotkey + menu item). Routes to preview only when preview
-    /// is enabled AND set to take over the Compose hotkey; otherwise instant.
+    /// The Compose action (hotkey + menu item).
     @objc private func translateNow() {
-        if LanguagePrefs.previewEnabled && LanguagePrefs.previewUsesComposeHotkey {
-            service.translateSelectionWithPreview()
-        } else {
-            service.translateSelectionInPlace()
-        }
+        service.translateSelectionInPlace()
     }
 
-    /// The dedicated preview action (separate preview hotkey).
-    @objc private func previewNow() {
-        service.translateSelectionWithPreview()
-    }
-
-    /// (Re)apply hotkey registration for the current preview settings. Compose and
-    /// Read are always registered (Compose routes internally); the separate preview
-    /// hotkey is registered only when preview is on and NOT taking over Compose.
     private func applyHotkeyRegistration() {
         composeHotkey.register()
         readHotkey.register()
-        if LanguagePrefs.previewEnabled && !LanguagePrefs.previewUsesComposeHotkey {
-            previewHotkey.register()
-        } else {
-            previewHotkey.unregister()
-        }
     }
 
     @objc private func readNow() {
@@ -253,50 +273,154 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsWindowController.shared.show()
     }
 
-    @objc private func openSetup() {
-        SetupWindowController.shared.show()
-    }
-
     @objc private func quit() {
         NSApp.terminate(nil)
     }
 
-    @objc private func selectComposeLanguage(_ sender: NSMenuItem) {
-        guard let code = sender.representedObject as? String else { return }
+    /// Applies a field's new value and folds its inline list back up — but,
+    /// unlike a native menu-item selection, does NOT close the enclosing
+    /// status-bar menu (see `LanguageRow`).
+    private func applyComposeSource(_ code: String) {
+        if googleHealthy {
+            // A choice made while everything's working becomes the new standing
+            // preference — it survives any future outage and recovery.
+            LanguagePrefs.composeSourceCode = code
+            LanguagePrefs.composeSourceOverride = nil
+        } else {
+            // Picked during an outage — treated the same as the automatic
+            // substitution: temporary. The standing preference resets to
+            // Auto-detect, so it's what this reverts to once Google's healthy.
+            LanguagePrefs.composeSourceCode = Languages.autoCode
+            LanguagePrefs.composeSourceOverride = code == Languages.autoCode ? nil : code
+        }
+        if code != Languages.autoCode { LanguagePrefs.lastSpecificComposeSourceCode = code }
+        refreshLanguageMenus()
+        collapse()
+    }
+
+    private func applyComposeTarget(_ code: String) {
         LanguagePrefs.composeTargetCode = code
         refreshLanguageMenus()
+        collapse()
     }
 
-    @objc private func selectReadLanguage(_ sender: NSMenuItem) {
-        guard let code = sender.representedObject as? String else { return }
-        LanguagePrefs.readSourceCode = code
-        LanguagePrefs.readSourceOverride = nil   // deliberate choice wins over any offline override
+    private func applyReadSource(_ code: String) {
+        if googleHealthy {
+            // A choice made while everything's working becomes the new standing
+            // preference — it survives any future outage and recovery.
+            LanguagePrefs.readSourceCode = code
+            LanguagePrefs.readSourceOverride = nil
+        } else {
+            // Picked during an outage — treated the same as the automatic
+            // substitution: temporary. The standing preference resets to
+            // Auto-detect, so it's what this reverts to once Google's healthy.
+            LanguagePrefs.readSourceCode = Languages.autoCode
+            LanguagePrefs.readSourceOverride = code == Languages.autoCode ? nil : code
+        }
         if code != Languages.autoCode { LanguagePrefs.lastSpecificReadCode = code }
         refreshLanguageMenus()
+        collapse()
     }
 
-    /// Sync submenu checkmarks and both direction cards to the current selections.
+    private func applyReadTarget(_ code: String) {
+        LanguagePrefs.readTargetCode = code
+        refreshLanguageMenus()
+        collapse()
+    }
+
+    /// Sync inline-row checkmarks and both direction cards to the current selections.
     private func refreshLanguageMenus() {
-        let compose = LanguagePrefs.composeTargetCode
-        let read = LanguagePrefs.effectiveReadSourceCode
-        for item in composeLangMenu.items {
-            item.state = (item.representedObject as? String == compose) ? .on : .off
-        }
-        for item in readLangMenu.items {
-            item.state = (item.representedObject as? String == read) ? .on : .off
-        }
+        let composeSource = LanguagePrefs.effectiveComposeSourceCode
+        let composeTarget = LanguagePrefs.composeTargetCode
+        let readSource = LanguagePrefs.effectiveReadSourceCode
+        let readTarget = LanguagePrefs.readTargetCode
+        checkmark(fieldItems[.composeSource], matching: composeSource)
+        checkmark(fieldItems[.composeTarget], matching: composeTarget)
+        checkmark(fieldItems[.readSource], matching: readSource)
+        checkmark(fieldItems[.readTarget], matching: readTarget)
+
         composeCard?.shortcut = composeHotkey.display
         readCard?.shortcut = readHotkey.display
-        composeCard?.direction = "English → \(shortLang(compose))"
-        readCard?.direction = "\(shortLang(read)) → English"
-        composeCard?.needsDisplay = true
-        readCard?.needsDisplay = true
+        composeCard?.setDirection(left: shortLang(composeSource), right: shortLang(composeTarget))
+        readCard?.setDirection(left: shortLang(readSource), right: shortLang(readTarget))
+        composeCard?.swapEnabled = composeSource != Languages.autoCode
+        readCard?.swapEnabled = readSource != Languages.autoCode
+    }
+
+    private func checkmark(_ items: [NSMenuItem]?, matching code: String) {
+        for item in items ?? [] {
+            guard let row = item.view as? LanguageRow else { continue }
+            row.isChecked = (row.code == code)
+        }
     }
 
     /// Native display name without the trailing "(English name)" annotation.
     private func shortLang(_ code: String) -> String {
         let full = Languages.name(for: code)
         return String(full.split(separator: " (").first ?? Substring(full))
+    }
+
+    /// Builds one field's inline row list. `includeAutoDetect` is true only for
+    /// source fields — a target can never be Auto-detect. Each row is a custom
+    /// view (`LanguageRow`), not a native menu-item action, so picking one
+    /// doesn't dismiss the enclosing menu.
+    private func buildFieldItems(includeAutoDetect: Bool, apply: @escaping (String) -> Void) -> [NSMenuItem] {
+        var codesAndTitles: [(code: String, title: String)] = []
+        if includeAutoDetect { codesAndTitles.append((Languages.autoCode, "Auto-detect")) }
+        codesAndTitles.append((Languages.englishCode, "English"))
+        codesAndTitles += Languages.all.map { ($0.code, $0.name) }
+
+        return codesAndTitles.map { code, title in
+            let row = LanguageRow(code: code, title: title)
+            row.onSelect = { apply(code) }
+            let item = NSMenuItem()
+            item.view = row
+            return item
+        }
+    }
+
+    /// Toggle one field's inline row list. Only one field across both cards is
+    /// ever expanded at a time — expanding a new one collapses whatever was open.
+    private func toggle(_ field: Field) {
+        if expandedField == field { collapse(); return }
+        collapse()
+        let anchor: NSMenuItem = (field == .composeSource || field == .composeTarget) ? composeItem : readCardItem
+        let idx = menu.index(of: anchor)
+        guard idx >= 0, let items = fieldItems[field] else { return }
+        // Whatever's chosen on the other side of this card can't also be chosen
+        // here — translating a language into itself isn't a real option — so
+        // leave that one row out.
+        let takenByOtherSide = otherSideValue(for: field)
+        let visible = items.filter { ($0.view as? LanguageRow)?.code != takenByOtherSide }
+        for (offset, item) in visible.enumerated() {
+            menu.insertItem(item, at: idx + 1 + offset)
+        }
+        expandedField = field
+        expandedItems = visible
+        updateCardExpansionFlags()
+    }
+
+    private func collapse() {
+        for item in expandedItems { menu.removeItem(item) }
+        expandedItems = []
+        expandedField = nil
+        updateCardExpansionFlags()
+    }
+
+    /// The value currently chosen on the opposite side of `field`'s own card,
+    /// to exclude from `field`'s own list.
+    private func otherSideValue(for field: Field) -> String {
+        switch field {
+        case .composeSource: return LanguagePrefs.composeTargetCode
+        case .composeTarget: return LanguagePrefs.effectiveComposeSourceCode
+        case .readSource: return LanguagePrefs.readTargetCode
+        case .readTarget: return LanguagePrefs.effectiveReadSourceCode
+        }
+    }
+
+    private func updateCardExpansionFlags() {
+        composeCard?.isExpanded = (expandedField == .composeSource || expandedField == .composeTarget)
+        readCard?.isExpanded = (expandedField == .readSource || expandedField == .readTarget)
     }
 
     /// The merged status row: a dot + engine/state text + usage count on one line,
@@ -401,6 +525,14 @@ extension AppDelegate: NSMenuDelegate {
     nonisolated func menuWillOpen(_ menu: NSMenu) {
         MainActor.assumeIsolated {
             updateStatusRow()
+        }
+    }
+
+    // Each fresh open starts with both language lists collapsed, rather than
+    // carrying over whatever was expanded when the menu last closed.
+    nonisolated func menuDidClose(_ menu: NSMenu) {
+        MainActor.assumeIsolated {
+            collapse()
         }
     }
 }

@@ -22,8 +22,9 @@ Google" / "Apple (offline)").
 ## Setup
 
 On first launch, a **Setup Assistant** walks you through the steps below —
-Accessibility permission, your Google API key, your language, and your two
-shortcuts — and only appears once. You can reopen it anytime from **譯 → Setup
+Accessibility permission, your Google API key, your language, an offline
+language pack for Apple's fallback engine, and your two shortcuts — and only
+appears once. You can reopen it anytime from **譯 → Settings… → Setup
 Assistant…**. The manual steps below cover the same ground.
 
 ### 1. Build and install
@@ -51,8 +52,9 @@ The hotkey needs to read and replace text via synthesized keystrokes:
 3. Paste it into **譯 → Settings… → Google API key → Save key**.
 
 Alternatively, leave the key blank to use only Apple's on-device engine — fully
-free and offline, but lower quality. Use **Settings → Download zh-TW pack** once
-to fetch the language model.
+free and offline, but lower quality. Use **Settings → Manage offline
+languages…** (or the Setup Assistant's offline-translation step) to download
+the language model first.
 
 ### 4. (Optional) Launch at login
 
@@ -62,25 +64,26 @@ which `install-bar.sh` handles.)
 ## Usage
 
 - **Compose a message** (⌥⌘T, default): type it, press the hotkey — the whole
-  field is translated to your selected target language (default Traditional
-  Chinese) and pasted back. Change the target language from the **Compose** card
-  in the 譯 menu.
+  field is translated and pasted back. Compose and Read each have an
+  independent **source** and **target** language, shown as two clickable names
+  either side of a swap (⇄) button on their card in the 譯 menu — click either
+  name to pick from its own list, or click the arrow to swap them. Source can
+  be Auto-detect on either card; target can be any language, English included.
 - **Existing document** (select first): **select** the text you want translated,
   then press the hotkey — only the selection is replaced.
-- **Preview before sending (optional):** turn on **Settings → Preview → "Preview
-  before inserting"** to see the translation *and what it means back in English*
-  before it's inserted — press **Return** to insert, **Esc** to cancel. Choose
-  whether it runs on a separate shortcut (default ⌥⇧⌘T) or takes over your Compose
-  shortcut. The back-check prefers Apple's free on-device engine (macOS 15 with the
-  language downloaded), so it usually doesn't count against your Google free tier;
-  when Apple isn't available it falls back to Google. Either way it never *charges*
-  — the free-tier auto-protect still applies.
 - **Read a message** (⌥⌘R, default): select any text on your screen (in a
-  message, web page, PDF, etc.), press the hotkey — a small popup near your cursor
-  shows the English translation. Nothing is changed or pasted; it's read-only. Change
-  the source language from the **Read** card in the 譯 menu (default Auto-detect,
-  which requires internet; pick a specific language to work fully offline). If nothing is selected,
-  the app beeps.
+  message, web page, PDF, etc.), press the hotkey — a small popup near your
+  cursor shows the translation. Nothing is changed or pasted; it's read-only.
+  If nothing is selected, the app beeps.
+- **Auto-detect follows Google's health:** whenever Google Translate is reachable
+  and working, a source set to Auto-detect stays on Auto-detect — including
+  automatically resetting to it each time the app launches. If Google breaks
+  (offline, quota exceeded, a bad key) while a card is on Auto-detect, it
+  silently substitutes your last specific language so translation keeps
+  working, then reverts to Auto-detect once Google's healthy again. A specific
+  language you pick *while Google is healthy* is a deliberate choice instead —
+  it's kept even through a later outage and recovery. One picked *during* an
+  outage is treated as temporary, the same as the automatic substitution.
 - **Available languages:** Traditional Chinese, Simplified Chinese, Japanese,
   Korean, Spanish, French, German, Thai, Vietnamese.
 - **Customize the hotkeys:** Both shortcuts are customizable in Settings → Shortcut

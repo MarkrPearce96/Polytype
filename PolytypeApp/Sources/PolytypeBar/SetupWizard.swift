@@ -64,7 +64,7 @@ struct SetupView: View {
     let onFinish: () -> Void
 
     private let secrets = KeychainSecretStore()
-    private let stepCount = 6
+    private let stepCount = 7
     @State private var step = 0
     @State private var apiKey = ""
     @State private var composeCode = "zh-TW"
@@ -108,7 +108,8 @@ struct SetupView: View {
         case 1: accessibilityStep
         case 2: apiKeyStep
         case 3: languageStep
-        case 4: shortcutsStep
+        case 4: offlinePackStep
+        case 5: shortcutsStep
         default: doneStep
         }
     }
@@ -207,8 +208,31 @@ struct SetupView: View {
                 ForEach(Languages.all, id: \.code) { lang in Text(lang.name).tag(lang.code) }
             }
             .labelsHidden().pickerStyle(.menu)
-            Text("Reading goes the other way — it auto-detects any foreign text into English. Change either anytime from the menu-bar icon.")
+            Text("Reading goes the other way, and can also auto-detect the language for you. Both directions, and what each one translates into, are all adjustable anytime from the menu-bar icon.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(28).frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var offlinePackStep: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            icon("arrow.down.circle")
+            Text("Set up offline translation").font(.title2.weight(.semibold))
+            if #available(macOS 15, *) {
+                Text("When Google's unavailable — no connection, or you've used your free monthly quota — Polytype automatically switches to Apple's on-device translation. It needs the language downloaded first.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("Open Language & Region settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                Text("Under “Translation Languages,” download \(Languages.name(for: composeCode)) (and any others you plan to use). Revisit this anytime from Settings.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Apple's on-device fallback needs macOS 15 or later — you're on an earlier version, so Polytype relies on Google alone. A translation key from the previous step is worth adding if you skipped it.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Spacer()
         }
         .padding(28).frame(maxWidth: .infinity, alignment: .leading)
@@ -297,6 +321,9 @@ struct SetupView: View {
         case 4:
             Button("Back") { step = 3 }.buttonStyle(.plain).foregroundStyle(.secondary)
             Button("Continue") { step = 5 }.buttonStyle(GradientButtonStyle())
+        case 5:
+            Button("Back") { step = 4 }.buttonStyle(.plain).foregroundStyle(.secondary)
+            Button("Continue") { step = 6 }.buttonStyle(GradientButtonStyle())
         default:
             Button("Start translating") { onFinish() }.buttonStyle(GradientButtonStyle())
         }
