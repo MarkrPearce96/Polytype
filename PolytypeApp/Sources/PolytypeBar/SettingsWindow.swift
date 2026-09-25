@@ -5,11 +5,11 @@ import TranslationCore
 /// Preferences UI: set the two shortcuts, the Google API key (stored in the
 /// Keychain), the login item, and reach macOS's offline-language downloads.
 ///
-/// Hosted in the same dark floating panel the menu itself uses (see
-/// `SettingsPanelController`) rather than a normal titled window — the back
-/// arrow returns to the menu in place, rather than this being a separate app
-/// surface elsewhere on screen. Native `Form` controls are kept (forced into
-/// dark appearance by the hosting window, not hand-restyled) since
+/// Hosted directly inside the same dropdown panel the menu itself uses (see
+/// `DropdownPanel`/`AppDelegate.openSettings`), swapped in as its content in
+/// place rather than opening as a separate window — the back arrow swaps the
+/// panel's content back to the menu. Native `Form` controls are kept (forced
+/// into dark appearance by the hosting window, not hand-restyled) since
 /// reimplementing a date picker, secure field, and toggle from scratch would
 /// add real risk for no benefit over what AppKit already renders correctly.
 struct SettingsView: View {
@@ -29,22 +29,6 @@ struct SettingsView: View {
     private var minRenewDate: Date {
         let cal = Calendar(identifier: .gregorian)
         return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: Date())) ?? Date().addingTimeInterval(86_400)
-    }
-
-    /// The app's blue→violet identity gradient (matches the icon and menu).
-    private var brand: LinearGradient {
-        LinearGradient(
-            colors: [Color(red: 74/255, green: 125/255, blue: 1.0),
-                     Color(red: 150/255, green: 88/255, blue: 246/255)],
-            startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
-
-    /// The panel's own gradient — matches the menu shell exactly.
-    private var panelBackground: LinearGradient {
-        LinearGradient(
-            colors: [Color(red: 34/255, green: 49/255, blue: 66/255),
-                     Color(red: 27/255, green: 39/255, blue: 51/255)],
-            startPoint: .top, endPoint: .bottom)
     }
 
     var body: some View {
@@ -158,10 +142,11 @@ struct SettingsView: View {
 
             footer
         }
-        .frame(width: 360, height: 520)
-        .background(panelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.06)))
+        .frame(width: 340, height: 520)
+        // No own background/corner-clip/shadow here — this view is embedded
+        // directly into the shared panel shell (`GradientPanelView`), which
+        // already provides the gradient, rounded corners, and shadow; adding
+        // a second set here would double up rather than match it.
         .onAppear {
             key = secrets.get(googleKeyName) ?? ""
             renewDate = MeterAccess.meter?.nextResetDate ?? Date()
@@ -215,81 +200,3 @@ struct SettingsView: View {
     }
 }
 
-/// Shows Settings as a borderless panel anchored to the status item, in the
-/// same screen position the menu itself appears — swapping in for the menu
-/// rather than opening as a separate window elsewhere. Dismisses like a menu
-/// too: closes as soon as it stops being the key window (a click anywhere
-/// else), not just via its own back button.
-@MainActor
-final class SettingsPanelController: NSObject, NSWindowDelegate {
-    static let shared = SettingsPanelController()
-    private var window: NSWindow?
-    private var reopenMenu: (() -> Void)?
-
-    /// - Parameters:
-    ///   - button: the status item's button, used to position the panel
-    ///     exactly where the menu appears.
-    ///   - reopenMenu: called when the back button is pressed, to hand
-    ///     control back to the normal dropdown.
-    func show(near button: NSStatusBarButton?, reopenMenu: @escaping () -> Void) {
-        self.reopenMenu = reopenMenu
-
-        let hosting = NSHostingController(rootView: SettingsView(onBack: { [weak self] in
-            self?.goBack()
-        }))
-        let w: NSWindow
-        if let existing = window {
-            w = existing
-            w.contentViewController = hosting
-        } else {
-            w = NSWindow(contentViewController: hosting)
-            w.styleMask = [.borderless]
-            w.isOpaque = false
-            w.backgroundColor = .clear
-            w.hasShadow = false   // SwiftUI draws its own shadow-shaped-to-match the rounded panel
-            w.level = .popUpMenu
-            // Panel is always dark (matches the menu shell) regardless of the
-            // system's light/dark setting — force it so native controls
-            // (buttons, fields, the date picker) render with dark styling
-            // and don't clash against the dark gradient background.
-            w.appearance = NSAppearance(named: .darkAqua)
-            w.isReleasedWhenClosed = false
-            w.delegate = self
-            window = w
-        }
-
-        position(w, near: button)
-        NSApp.activate(ignoringOtherApps: true)
-        w.makeKeyAndOrderFront(nil)
-    }
-
-    private func goBack() {
-        window?.orderOut(nil)
-        reopenMenu?()
-    }
-
-    /// Closing like a menu: dismiss the instant something else becomes key,
-    /// not just via the explicit back button.
-    nonisolated func windowDidResignKey(_ notification: Notification) {
-        MainActor.assumeIsolated {
-            window?.orderOut(nil)
-        }
-    }
-
-    private func position(_ window: NSWindow, near button: NSStatusBarButton?) {
-        guard let button, let buttonWindow = button.window else {
-            window.center()
-            return
-        }
-        let buttonFrameOnScreen = buttonWindow.convertToScreen(button.frame)
-        let size = window.frame.size
-        var origin = NSPoint(
-            x: buttonFrameOnScreen.maxX - size.width,
-            y: buttonFrameOnScreen.minY - size.height - 4)
-        if let screenFrame = buttonWindow.screen?.visibleFrame {
-            origin.x = max(screenFrame.minX + 8, min(origin.x, screenFrame.maxX - size.width - 8))
-            origin.y = max(screenFrame.minY + 8, origin.y)
-        }
-        window.setFrameOrigin(origin)
-    }
-}

@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import SwiftUI
 import TranslationCore
 import UserNotifications
 
@@ -13,25 +14,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let defaultTitle = "譯"
     private var composeHotkey: HotkeyController!
     private var readHotkey: HotkeyController!
-    private var menu: NSMenu!
-    private var composeItem: NSMenuItem!
-    private var readCardItem: NSMenuItem!
+    /// The single floating panel — replaces the native `NSMenu` dropdown so
+    /// Settings can swap in as this same panel's content (see `openSettings`)
+    /// instead of needing a second window that can only ever guess at where
+    /// the first one was.
+    private var dropdown: DropdownPanel!
+    private var menuStack: VerticalRowStack!
 
     /// The four independently-editable language fields, each with its own
     /// inline row list, its own click target (a `DirectionChip` inside the
-    /// owning card), and its own anchor item it's inserted below when
-    /// expanded — these replace what a card's native `.submenu` used to be,
-    /// since a real NSMenuItem submenu can only ever open on hover, never on
-    /// a deliberate click, and a single submenu can't disambiguate "which of
-    /// this card's two fields am I changing."
+    /// owning card), and its own anchor row it's inserted below when
+    /// expanded — since a single list can't disambiguate "which of this
+    /// card's two fields am I changing."
     private enum Field { case composeSource, composeTarget, readSource, readTarget }
-    private var fieldItems: [Field: [NSMenuItem]] = [:]
+    private var fieldItems: [Field: [LanguageRow]] = [:]
     private var expandedField: Field?
-    /// Exactly the items currently inserted into `menu` for `expandedField` —
-    /// a filtered subset of `fieldItems[expandedField]` (the language already
-    /// chosen on the other side of the same card is left out), tracked
-    /// separately so collapse only ever removes items that are actually there.
-    private var expandedItems: [NSMenuItem] = []
+    /// Exactly the rows currently inserted into `menuStack` for
+    /// `expandedField` — a filtered subset of `fieldItems[expandedField]`
+    /// (the language already chosen on the other side of the same card is
+    /// left out), tracked separately so collapse only ever removes rows that
+    /// are actually there.
+    private var expandedItems: [LanguageRow] = []
 
     /// Which curated languages currently have their on-device pack installed,
     /// checked against English (the common pairing) — nil until computed.
@@ -107,7 +110,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        menu = NSMenu()
+        dropdown = DropdownPanel()
+        dropdown.onWillShow = { [weak self] in self?.updateStatusRow() }
+        dropdown.onDidHide = { [weak self] in
+            self?.collapse()
+            // Reset to the menu so a fresh click on the status icon always
+            // starts there, even if Settings was showing when this closed
+            // (e.g. the user clicked away while looking at Settings).
+            if let self, let stack = self.menuStack { self.dropdown.setContent(stack) }
+        }
+
+        let rowWidth: CGFloat = 292
+        menuStack = VerticalRowStack(frame: .zero)
+        menuStack.rowWidth = rowWidth
 
         // Two direction cards, each with an independent source and target
         // field. Both fields on both cards may be Auto-detect on the source
@@ -122,9 +137,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         composeCard.onSourceClicked = { [weak self] in self?.toggle(.composeSource) }
         composeCard.onTargetClicked = { [weak self] in self?.toggle(.composeTarget) }
-        composeItem = NSMenuItem()
-        composeItem.view = composeCard
-        menu.addItem(composeItem)
 
         fieldItems[.readSource] = buildFieldItems(includeAutoDetect: true) { [weak self] in self?.applyReadSource($0) }
         fieldItems[.readTarget] = buildFieldItems(includeAutoDetect: false) { [weak self] in self?.applyReadTarget($0) }
@@ -135,24 +147,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         readCard.onSourceClicked = { [weak self] in self?.toggle(.readSource) }
         readCard.onTargetClicked = { [weak self] in self?.toggle(.readTarget) }
-        readCardItem = NSMenuItem()
-        readCardItem.view = readCard
-        menu.addItem(readCardItem)
 
-        menu.addItem(.separator())
-        let statusRowItem = NSMenuItem()
-        statusRowItem.view = buildStatusRow()
-        menu.addItem(statusRowItem)
-        menu.addItem(.separator())
+        let settingsRow = FooterRow(title: "⚙ Settings…", hint: "⌘,", width: rowWidth)
+        settingsRow.target = self
+        settingsRow.action = #selector(openSettings)
+        let quitRow = FooterRow(title: "Quit", hint: "⌘Q", width: rowWidth)
+        quitRow.target = self
+        quitRow.action = #selector(quit)
 
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(settingsItem)
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
-        menu.addItem(quitItem)
+        menuStack.setRows([
+            composeCard,
+            readCard,
+            SeparatorRow(width: rowWidth),
+            buildStatusRow(),
+            SeparatorRow(width: rowWidth),
+            settingsRow,
+            quitRow,
+        ])
+        dropdown.setContent(menuStack)
 
-        for item in menu.items where item.action != nil { item.target = self }
-        menu.delegate = self
-        statusItem.menu = menu
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(statusItemClicked)
 
         service.onEngineUsed = { [weak self] name in
             self?.lastEngineUsed = name
@@ -298,10 +313,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.translateSelectionToPopup()
     }
 
+    @objc private func statusItemClicked() {
+        dropdown.toggle(near: statusItem.button)
+    }
+
+    /// Swaps the panel's content to Settings, in place — not a separate
+    /// window, so there's nothing to position or keep in sync with where the
+    /// menu happened to be.
     @objc private func openSettings() {
-        SettingsPanelController.shared.show(near: statusItem.button) { [weak self] in
-            self?.statusItem.button?.performClick(nil)
-        }
+        let hosting = NSHostingView(rootView: SettingsView(onBack: { [weak self] in
+            guard let self, let stack = self.menuStack else { return }
+            self.dropdown.setContent(stack)
+        }))
+        hosting.frame = NSRect(x: 0, y: 0, width: 340, height: 520)
+        dropdown.setContent(hosting)
     }
 
     @objc private func quit() {
@@ -378,9 +403,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         readCard?.swapEnabled = readSource != Languages.autoCode
     }
 
-    private func checkmark(_ items: [NSMenuItem]?, matching code: String) {
-        for item in items ?? [] {
-            guard let row = item.view as? LanguageRow else { continue }
+    private func checkmark(_ rows: [LanguageRow]?, matching code: String) {
+        for row in rows ?? [] {
             row.isChecked = (row.code == code)
         }
     }
@@ -394,8 +418,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Builds one field's inline row list. `includeAutoDetect` is true only for
     /// source fields — a target can never be Auto-detect. Each row is a custom
     /// view (`LanguageRow`), not a native menu-item action, so picking one
-    /// doesn't dismiss the enclosing menu.
-    private func buildFieldItems(includeAutoDetect: Bool, apply: @escaping (String) -> Void) -> [NSMenuItem] {
+    /// doesn't dismiss the enclosing panel. Rows don't need to know the panel's
+    /// width up front — `VerticalRowStack` resizes every row to fit when it's
+    /// actually inserted.
+    private func buildFieldItems(includeAutoDetect: Bool, apply: @escaping (String) -> Void) -> [LanguageRow] {
         var codesAndTitles: [(code: String, title: String)] = []
         if includeAutoDetect { codesAndTitles.append((Languages.autoCode, "Auto-detect")) }
         codesAndTitles.append((Languages.englishCode, "English"))
@@ -404,9 +430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return codesAndTitles.map { code, title in
             let row = LanguageRow(code: code, title: title)
             row.onSelect = { apply(code) }
-            let item = NSMenuItem()
-            item.view = row
-            return item
+            return row
         }
     }
 
@@ -415,9 +439,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func toggle(_ field: Field) {
         if expandedField == field { collapse(); return }
         collapse()
-        let anchor: NSMenuItem = (field == .composeSource || field == .composeTarget) ? composeItem : readCardItem
-        let idx = menu.index(of: anchor)
-        guard idx >= 0, let items = fieldItems[field] else { return }
+        let anchor: MenuCardView = (field == .composeSource || field == .composeTarget) ? composeCard : readCard
+        guard let idx = menuStack.rows.firstIndex(of: anchor), let items = fieldItems[field] else { return }
         // Whatever's chosen on the other side of this card can't also be chosen
         // here — translating a language into itself isn't a real option — so
         // leave that one row out. And while relying on Apple (Google down),
@@ -425,24 +448,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // included, since Apple can't auto-detect at all — once that's known;
         // if the check hasn't resolved yet, show everything rather than wait.
         let takenByOtherSide = otherSideValue(for: field)
-        let visible = items.filter { item in
-            guard let code = (item.view as? LanguageRow)?.code, code != takenByOtherSide else { return false }
+        let visible = items.filter { row in
+            guard row.code != takenByOtherSide else { return false }
             guard !googleHealthy, let installed = installedLanguageCodes else { return true }
-            return installed.contains(code)
+            return installed.contains(row.code)
         }
-        for (offset, item) in visible.enumerated() {
-            menu.insertItem(item, at: idx + 1 + offset)
-        }
+        menuStack.insertRows(visible, at: idx + 1)
         expandedField = field
         expandedItems = visible
         updateCardExpansionFlags()
+        dropdown.invalidateSize()
     }
 
     private func collapse() {
-        for item in expandedItems { menu.removeItem(item) }
+        guard !expandedItems.isEmpty else { return }
+        menuStack.removeRows(expandedItems)
         expandedItems = []
         expandedField = nil
         updateCardExpansionFlags()
+        dropdown.invalidateSize()
     }
 
     /// The value currently chosen on the opposite side of `field`'s own card,
@@ -556,21 +580,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-extension AppDelegate: NSMenuDelegate {
-    // Refresh the status row when the menu opens, so a just-saved API key shows
-    // as green without waiting for the next translation. Menus open on the main
-    // thread, so assuming main-actor isolation here is safe.
-    nonisolated func menuWillOpen(_ menu: NSMenu) {
-        MainActor.assumeIsolated {
-            updateStatusRow()
-        }
-    }
-
-    // Each fresh open starts with both language lists collapsed, rather than
-    // carrying over whatever was expanded when the menu last closed.
-    nonisolated func menuDidClose(_ menu: NSMenu) {
-        MainActor.assumeIsolated {
-            collapse()
-        }
-    }
-}
