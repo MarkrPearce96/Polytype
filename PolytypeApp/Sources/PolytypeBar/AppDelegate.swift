@@ -351,13 +351,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if code != Languages.autoCode { LanguagePrefs.lastSpecificComposeSourceCode = code }
         refreshLanguageMenus()
-        collapse()
+        collapse(animated: true)
     }
 
     private func applyComposeTarget(_ code: String) {
         LanguagePrefs.composeTargetCode = code
         refreshLanguageMenus()
-        collapse()
+        collapse(animated: true)
     }
 
     private func applyReadSource(_ code: String) {
@@ -375,13 +375,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if code != Languages.autoCode { LanguagePrefs.lastSpecificReadCode = code }
         refreshLanguageMenus()
-        collapse()
+        collapse(animated: true)
     }
 
     private func applyReadTarget(_ code: String) {
         LanguagePrefs.readTargetCode = code
         refreshLanguageMenus()
-        collapse()
+        collapse(animated: true)
     }
 
     /// Sync inline-row checkmarks and both direction cards to the current selections.
@@ -437,8 +437,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Toggle one field's inline row list. Only one field across both cards is
     /// ever expanded at a time — expanding a new one collapses whatever was open.
     private func toggle(_ field: Field) {
-        if expandedField == field { collapse(); return }
-        collapse()
+        // Closing the field that's already open is the "final" transition —
+        // worth animating. Closing one to immediately open a different one is
+        // an intermediate step, so it collapses instantly and only the new
+        // field's insertion (and the resulting resize) animates — avoids a
+        // collapse-then-expand double-animation feel.
+        if expandedField == field { collapse(animated: true); return }
+        collapse(animated: false)
         let anchor: MenuCardView = (field == .composeSource || field == .composeTarget) ? composeCard : readCard
         guard let idx = menuStack.rows.firstIndex(of: anchor), let items = fieldItems[field] else { return }
         // Whatever's chosen on the other side of this card can't also be chosen
@@ -453,20 +458,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard !googleHealthy, let installed = installedLanguageCodes else { return true }
             return installed.contains(row.code)
         }
-        menuStack.insertRows(visible, at: idx + 1)
+        menuStack.insertRows(visible, at: idx + 1, animated: true)
         expandedField = field
         expandedItems = visible
         updateCardExpansionFlags()
-        dropdown.invalidateSize()
+        dropdown.invalidateSize(animated: true)
     }
 
-    private func collapse() {
+    private func collapse(animated: Bool = false) {
         guard !expandedItems.isEmpty else { return }
-        menuStack.removeRows(expandedItems)
+        menuStack.removeRows(expandedItems, animated: animated)
         expandedItems = []
         expandedField = nil
         updateCardExpansionFlags()
-        dropdown.invalidateSize()
+        dropdown.invalidateSize(animated: animated)
     }
 
     /// The value currently chosen on the opposite side of `field`'s own card,

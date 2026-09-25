@@ -112,9 +112,9 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     /// Call after content inside the *current* view changes size (a field's
     /// inline list expands or collapses) so the window resizes from its
     /// fixed top-right anchor instead of the content just overflowing it.
-    func invalidateSize() {
+    func invalidateSize(animated: Bool = false) {
         guard window.isVisible else { return }
-        applyFrame(forContentSize: shellView.fittingSize, animated: false)
+        applyFrame(forContentSize: shellView.fittingSize, animated: animated)
     }
 
     private func computeAnchor(near button: NSStatusBarButton?) {
@@ -256,7 +256,7 @@ protocol ExplicitlySized: NSView {
 /// AppKit's coordinate origin is bottom-left.
 final class VerticalRowStack: NSView, ExplicitlySized {
     private(set) var rows: [NSView] = []
-    var rowWidth: CGFloat = 300 { didSet { relayout() } }
+    var rowWidth: CGFloat = 300 { didSet { relayout(animated: false) } }
 
     var explicitSize: NSSize { NSSize(width: rowWidth, height: frame.height) }
 
@@ -264,31 +264,66 @@ final class VerticalRowStack: NSView, ExplicitlySized {
         for row in rows { row.removeFromSuperview() }
         rows = newRows
         for row in rows { addSubview(row) }
-        relayout()
+        relayout(animated: false)
     }
 
-    func insertRows(_ newRows: [NSView], at index: Int) {
+    /// Inserts and fades/slides the new rows in, while every row already
+    /// below the insertion point animates down to make room.
+    func insertRows(_ newRows: [NSView], at index: Int, animated: Bool = false) {
         for (offset, row) in newRows.enumerated() {
             rows.insert(row, at: index + offset)
+            row.alphaValue = animated ? 0 : 1
             addSubview(row)
         }
-        relayout()
-    }
-
-    func removeRows(_ rowsToRemove: [NSView]) {
-        for row in rowsToRemove {
-            row.removeFromSuperview()
-            rows.removeAll { $0 === row }
+        relayout(animated: animated)
+        guard animated else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.animationDuration
+            context.timingFunction = Self.animationTiming
+            for row in newRows { row.animator().alphaValue = 1 }
         }
-        relayout()
     }
 
-    private func relayout() {
+    /// Removes the rows from the layout immediately (so a row it's animating
+    /// out never overlaps a subsequent expand elsewhere), but keeps their
+    /// views on screen a beat to fade out while everything else slides up to
+    /// close the gap.
+    func removeRows(_ rowsToRemove: [NSView], animated: Bool = false) {
+        rows.removeAll { row in rowsToRemove.contains { $0 === row } }
+        guard animated else {
+            for row in rowsToRemove { row.removeFromSuperview() }
+            relayout(animated: false)
+            return
+        }
+        relayout(animated: true)
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Self.animationDuration
+            context.timingFunction = Self.animationTiming
+            for row in rowsToRemove { row.animator().alphaValue = 0 }
+        }, completionHandler: {
+            for row in rowsToRemove { row.removeFromSuperview() }
+        })
+    }
+
+    private static let animationDuration = 0.18
+    private static let animationTiming = CAMediaTimingFunction(name: .easeInEaseOut)
+
+    private func relayout(animated: Bool) {
         var y: CGFloat = 0
+        var targets: [(row: NSView, rect: NSRect)] = []
         for row in rows.reversed() {
             let h = row.frame.height
-            row.frame = NSRect(x: 0, y: y, width: rowWidth, height: h)
+            targets.append((row, NSRect(x: 0, y: y, width: rowWidth, height: h)))
             y += h
+        }
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Self.animationDuration
+                context.timingFunction = Self.animationTiming
+                for (row, rect) in targets { row.animator().frame = rect }
+            }
+        } else {
+            for (row, rect) in targets { row.frame = rect }
         }
         frame = NSRect(x: frame.origin.x, y: frame.origin.y, width: rowWidth, height: y)
     }
