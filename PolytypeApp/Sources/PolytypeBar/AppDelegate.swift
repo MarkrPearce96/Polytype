@@ -33,6 +33,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// separately so collapse only ever removes items that are actually there.
     private var expandedItems: [NSMenuItem] = []
 
+    /// Which curated languages currently have their on-device pack installed,
+    /// checked against English (the common pairing) — nil until computed.
+    /// Populated lazily while relying on Apple (see `reconcileGoogleHealth`)
+    /// so the pickers can filter to only what's actually usable right now;
+    /// left nil (no filtering) while Google's healthy, since Google can
+    /// translate any pair with nothing to download.
+    private var installedLanguageCodes: Set<String>?
+
     private var composeCard: MenuCardView!
     private var readCard: MenuCardView!
     private var statusDot: NSView!
@@ -227,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if googleHealthy {
             LanguagePrefs.readSourceOverride = nil
             LanguagePrefs.composeSourceOverride = nil
+            installedLanguageCodes = nil   // recompute fresh next time we actually rely on Apple
         } else {
             if LanguagePrefs.readSourceCode == Languages.autoCode && LanguagePrefs.readSourceOverride == nil {
                 LanguagePrefs.readSourceOverride = LanguagePrefs.lastSpecificReadCode
@@ -234,8 +243,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if LanguagePrefs.composeSourceCode == Languages.autoCode && LanguagePrefs.composeSourceOverride == nil {
                 LanguagePrefs.composeSourceOverride = LanguagePrefs.lastSpecificComposeSourceCode
             }
+            if installedLanguageCodes == nil { refreshInstalledLanguageAvailability() }
         }
         refreshLanguageMenus()
+    }
+
+    /// Populates `installedLanguageCodes` — async, since checking Apple's
+    /// on-device pack status is a real system query, not instant. Until it
+    /// resolves, the pickers just show everything unfiltered rather than
+    /// waiting; this fills in shortly after, in practice before most users
+    /// even open a list.
+    private func refreshInstalledLanguageAvailability() {
+        guard #available(macOS 15, *) else { installedLanguageCodes = []; return }
+        Task { @MainActor in
+            var installed: Set<String> = [Languages.englishCode]
+            for lang in Languages.all {
+                let toEnglish = await AppleLanguagePack.isInstalled(from: lang.code, to: Languages.englishCode)
+                let fromEnglish = await AppleLanguagePack.isInstalled(from: Languages.englishCode, to: lang.code)
+                if toEnglish || fromEnglish { installed.insert(lang.code) }
+            }
+            guard !self.googleHealthy else { return }   // recovered while checking — no longer relevant
+            self.installedLanguageCodes = installed
+        }
     }
 
     /// Put our colored app icon in the menu bar. Returns false if the image
@@ -270,7 +299,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettings() {
-        SettingsWindowController.shared.show()
+        SettingsPanelController.shared.show(near: statusItem.button) { [weak self] in
+            self?.statusItem.button?.performClick(nil)
+        }
     }
 
     @objc private func quit() {
@@ -389,9 +420,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard idx >= 0, let items = fieldItems[field] else { return }
         // Whatever's chosen on the other side of this card can't also be chosen
         // here — translating a language into itself isn't a real option — so
-        // leave that one row out.
+        // leave that one row out. And while relying on Apple (Google down),
+        // only offer languages actually installed on-device — Auto-detect
+        // included, since Apple can't auto-detect at all — once that's known;
+        // if the check hasn't resolved yet, show everything rather than wait.
         let takenByOtherSide = otherSideValue(for: field)
-        let visible = items.filter { ($0.view as? LanguageRow)?.code != takenByOtherSide }
+        let visible = items.filter { item in
+            guard let code = (item.view as? LanguageRow)?.code, code != takenByOtherSide else { return false }
+            guard !googleHealthy, let installed = installedLanguageCodes else { return true }
+            return installed.contains(code)
+        }
         for (offset, item) in visible.enumerated() {
             menu.insertItem(item, at: idx + 1 + offset)
         }

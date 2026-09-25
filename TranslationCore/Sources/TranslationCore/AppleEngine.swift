@@ -59,6 +59,20 @@ public final class AppleEngine: TranslationEngine, @unchecked Sendable {
     }
 }
 
+/// Whether a given pair can be translated on-device right now, without
+/// needing to download anything first. A pure query — unlike `AppleEngine`
+/// itself, this needs none of the SwiftUI-session bridging below, since
+/// `LanguageAvailability` is a plain standalone async API.
+@available(macOS 15.0, *)
+public enum AppleLanguagePack {
+    public static func isInstalled(from source: String, to target: String) async -> Bool {
+        let status = await LanguageAvailability().status(
+            from: Locale.Language(identifier: source),
+            to: Locale.Language(identifier: target))
+        return status == .installed
+    }
+}
+
 /// Bridges Apple's SwiftUI-only `TranslationSession` API to async/await.
 ///
 /// `TranslationSession` has no supported standalone initializer on macOS 15-25 (macOS 26
@@ -232,5 +246,9 @@ public final class AppleEngine: TranslationEngine, @unchecked Sendable {
     public func translate(_ text: String, from source: String, to target: String) async throws -> String {
         throw TranslationError.network("Translation framework unavailable")
     }
+}
+
+public enum AppleLanguagePack {
+    public static func isInstalled(from source: String, to target: String) async -> Bool { false }
 }
 #endif
