@@ -7,10 +7,14 @@ import TranslationCore
 ///
 /// Flow on hotkey press:
 ///   1. Remember the current clipboard so we can put it back.
-///   2. Synthesize ⌘A then ⌘C to select-all and copy the field.
-///   3. Poll the clipboard until the copy lands, read the English.
+///   2. Synthesize ⌘C. If that copied something, that's the selection.
+///   3. If nothing was selected, try to select just the paragraph at the
+///      cursor via Accessibility (`SmartSelection`); if that isn't supported
+///      by the focused app, fall back to ⌘A — but only translate the result
+///      if it's short (see `selectAllWithGuard`), since a long document
+///      select-all is almost never what was meant by "nothing selected."
 ///   4. Translate via the shared engine (Google → Apple fallback).
-///   5. Put the Mandarin on the clipboard and synthesize ⌘V to paste it.
+///   5. Put the translation on the clipboard and synthesize ⌘V to paste it.
 ///   6. Restore the original clipboard a beat later.
 ///
 /// Steps 2/5 require Accessibility permission (to post synthetic keystrokes).
@@ -60,26 +64,56 @@ final class TranslateService {
 
         // Copy whatever is CURRENTLY selected first — don't select-all yet. If the
         // user selected a sentence, this grabs just that. Only if nothing is
-        // selected (clipboard unchanged) do we fall back to select-all, which
-        // suits an otherwise-empty compose field but would grab a whole document.
+        // selected (clipboard unchanged) do we try a smarter fallback below.
         let before = pb.changeCount
         postCommandKey(CGKeyCode(kVK_ANSI_C))
         waitForClipboardChange(pb, from: before, attempts: 12) { [weak self] hadSelection in
             guard let self else { return }
             if hadSelection {
                 self.translateClipboard(pb: pb, saved: saved)
-            } else {
-                // Nothing was selected → select all, then copy.
+            } else if SmartSelection.selectParagraphAtCursor() {
+                // The target app just highlighted the paragraph at the cursor
+                // for us — copy exactly that.
                 let before2 = pb.changeCount
-                self.postCommandKey(CGKeyCode(kVK_ANSI_A))
                 self.postCommandKey(CGKeyCode(kVK_ANSI_C))
-                self.waitForClipboardChange(pb, from: before2, attempts: 25) { changed in
+                self.waitForClipboardChange(pb, from: before2, attempts: 12) { changed in
                     if changed {
                         self.translateClipboard(pb: pb, saved: saved)
                     } else {
                         self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
                     }
                 }
+            } else {
+                // The focused app doesn't support Accessibility text ranges —
+                // fall back to select-all, but only translate it if it's short.
+                self.selectAllWithGuard(pb: pb, saved: saved)
+            }
+        }
+    }
+
+    /// Fallback when paragraph detection isn't available: select-all, then
+    /// only translate the result if it's message-sized. A long document
+    /// select-all is almost never what "nothing was selected" actually meant,
+    /// so this beeps and asks for a manual selection instead of silently
+    /// translating (and overwriting) the whole thing.
+    private static let selectAllGuardLimit = 500
+
+    private func selectAllWithGuard(pb: NSPasteboard, saved: [NSPasteboardItem]) {
+        let before = pb.changeCount
+        postCommandKey(CGKeyCode(kVK_ANSI_A))
+        postCommandKey(CGKeyCode(kVK_ANSI_C))
+        waitForClipboardChange(pb, from: before, attempts: 25) { [weak self] changed in
+            guard let self else { return }
+            guard changed else {
+                self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
+                return
+            }
+            let text = pb.string(forType: .string) ?? ""
+            if text.count > Self.selectAllGuardLimit {
+                NSSound.beep()
+                self.finish(status: "⚠", restore: saved, to: pb, after: 0.1)
+            } else {
+                self.translateClipboard(pb: pb, saved: saved)
             }
         }
     }
