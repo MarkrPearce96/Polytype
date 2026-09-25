@@ -138,23 +138,31 @@ final class GradientPanelView: NSView {
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 12, cornerHeight: 12, transform: nil)
     }
 
+    /// Deliberately NOT Auto Layout constraints pinning the content to this
+    /// view's edges: this view's own size is computed *from* the content's
+    /// natural size (see `fittingSize`/`DropdownPanel.applyFrame`), so
+    /// constraining the content to fill this view back would be circular —
+    /// on first show, before the window has ever been sized, this view's
+    /// bounds start at zero, the constraints would immediately force the
+    /// content down to zero to match, and the size computed from it would
+    /// then also be zero. A plain frame, set once from the content's own
+    /// natural size, breaks that cycle.
     func setContent(_ view: NSView) {
         contentView?.removeFromSuperview()
         contentView = view
-        view.translatesAutoresizingMaskIntoConstraints = false
+        view.translatesAutoresizingMaskIntoConstraints = true
+        view.frame = NSRect(origin: .zero, size: naturalSize(of: view))
         addSubview(view)
-        NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: trailingAnchor),
-            view.topAnchor.constraint(equalTo: topAnchor),
-            view.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+    }
+
+    private func naturalSize(of view: NSView) -> NSSize {
+        if let sized = view as? ExplicitlySized { return sized.explicitSize }
+        return view.fittingSize
     }
 
     override var fittingSize: NSSize {
         guard let contentView else { return NSSize(width: 300, height: 40) }
-        if let sized = contentView as? ExplicitlySized { return sized.explicitSize }
-        return contentView.fittingSize
+        return naturalSize(of: contentView)
     }
 
     override var acceptsFirstResponder: Bool { true }
