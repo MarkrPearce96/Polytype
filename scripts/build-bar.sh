@@ -22,7 +22,12 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # symbol at runtime, so no menu-bar image is bundled.
 cp "$ROOT/PolytypeApp/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+# Overridable for release CI, which sets these from the git tag so the built
+# app's version matches what's published. Local dev builds keep these defaults.
+APP_VERSION="${APP_VERSION:-0.6}"
+APP_BUILD="${APP_BUILD:-5}"
+
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -36,8 +41,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIconName</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.6</string>
-    <key>CFBundleVersion</key><string>5</string>
+    <key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
+    <key>CFBundleVersion</key><string>$APP_BUILD</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>

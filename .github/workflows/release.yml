@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-and-release:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Import signing certificate
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          echo "$APPLE_CERT_P12_BASE64" | base64 --decode -o "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          rm -f "$CERT_PATH"
+
+      - name: Build (signed with a personal Apple Development certificate)
+        env:
+          CODESIGN_IDENTITY: "Apple Development"
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          APP_VERSION="$TAG" APP_BUILD="${GITHUB_RUN_NUMBER}" ./scripts/build-bar.sh
+
+      - name: Verify signing chain
+        run: |
+          APP_PATH="build/Polytype.app"
+          SIGNING_INFO=$(codesign -dvvv "$APP_PATH" 2>&1)
+          if ! echo "$SIGNING_INFO" | grep -q "Authority=Apple Root CA"; then
+            echo "Built app is not signed by a real Apple-issued certificate chain (ad-hoc/self-signed would re-prompt for Accessibility on every update)" >&2
+            echo "$SIGNING_INFO" >&2
+            exit 1
+          fi
+
+      - name: Verify built version matches the tag
+        run: |
+          APP_PATH="build/Polytype.app"
+          TAG="${GITHUB_REF#refs/tags/v}"
+          BUILT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist")
+          if [ "$BUILT_VERSION" != "$TAG" ]; then
+            echo "Tag is v$TAG but built app reports version $BUILT_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Zip the app
+        run: |
+          APP_PATH="build/Polytype.app"
+          ditto -c -k --keepParent "$APP_PATH" Polytype.zip
+          TOP_ENTRY=$(unzip -Z1 Polytype.zip | head -1)
+          if [ "$TOP_ENTRY" != "Polytype.app/" ]; then
+            echo "Zip's top-level entry is '$TOP_ENTRY', expected 'Polytype.app/'" >&2
+            unzip -Z1 Polytype.zip >&2
+            exit 1
+          fi
+
+      - name: Compute sha256
+        run: shasum -a 256 Polytype.zip | tee sha256.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release create "$TAG" Polytype.zip \
+            --title "$TAG" \
+            --generate-notes \
+            --notes-file <(echo "sha256: $(cut -d' ' -f1 sha256.txt)")
+
+      - name: Remove the temporary signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
