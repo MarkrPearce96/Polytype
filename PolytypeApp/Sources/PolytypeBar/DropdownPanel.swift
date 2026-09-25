@@ -17,6 +17,16 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     /// changing), then held fixed while visible so the panel grows/shrinks
     /// from that same anchor rather than drifting as content changes size.
     private var anchorTopRight: NSPoint = .zero
+    /// Catches a click in another app or on the desktop — `windowDidResignKey`
+    /// alone isn't reliable for a borderless, non-activating-style window like
+    /// this one, so dismiss-on-click-outside is driven explicitly instead,
+    /// the same technique `NSPopover` uses internally for its own transient
+    /// dismissal.
+    private var globalClickMonitor: Any?
+    /// Catches a click elsewhere *within this app* but outside the panel
+    /// (e.g. Setup Assistant's window) — global monitors only see events in
+    /// other applications, so this covers the gap.
+    private var localClickMonitor: Any?
 
     /// Called right before the panel becomes visible (so callers can refresh
     /// content first) and right after it's dismissed for any reason —
@@ -52,12 +62,40 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
         applyFrame(forContentSize: shellView.fittingSize)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        startClickOutsideMonitors(statusButtonWindow: button?.window)
     }
 
     func hide() {
         guard window.isVisible else { return }
+        stopClickOutsideMonitors()
         window.orderOut(nil)
         onDidHide?()
+    }
+
+    /// - Parameter statusButtonWindow: excluded from the *local* monitor's
+    ///   dismiss check — the status item button lives in its own window, a
+    ///   click there is a different window than the panel's and would
+    ///   otherwise read as "outside," dismissing the panel a beat before the
+    ///   button's own click-to-toggle action runs and reopens it right away.
+    ///   The global monitor doesn't have this problem (it never sees clicks
+    ///   within this app at all), so only the local one needs the exclusion.
+    private func startClickOutsideMonitors(statusButtonWindow: NSWindow?) {
+        stopClickOutsideMonitors()
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in self?.hide() }
+        }
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            if event.window !== self.window && event.window !== statusButtonWindow { self.hide() }
+            return event   // never swallow the click — just observe it
+        }
+    }
+
+    private func stopClickOutsideMonitors() {
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        globalClickMonitor = nil
+        localClickMonitor = nil
     }
 
     /// Swaps the panel's whole content (menu ↔ settings) with a quick
