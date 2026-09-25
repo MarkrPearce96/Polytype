@@ -9,7 +9,7 @@ import TranslationCore
 ///   1. Remember the current clipboard so we can put it back.
 ///   2. Synthesize ⌘A then ⌘C to select-all and copy the field.
 ///   3. Poll the clipboard until the copy lands, read the English.
-///   4. Translate via the shared engine (DeepL → Apple fallback).
+///   4. Translate via the shared engine (Google → Apple fallback).
 ///   5. Put the Mandarin on the clipboard and synthesize ⌘V to paste it.
 ///   6. Restore the original clipboard a beat later.
 ///

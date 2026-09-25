@@ -4,15 +4,15 @@ import XCTest
 final class SecretStoreTests: XCTestCase {
     func testSetGetRoundTrip() {
         let store = InMemorySecretStore()
-        XCTAssertNil(store.get(deepLKeyName))
-        store.set("abc123", for: deepLKeyName)
-        XCTAssertEqual(store.get(deepLKeyName), "abc123")
+        XCTAssertNil(store.get(googleKeyName))
+        store.set("abc123", for: googleKeyName)
+        XCTAssertEqual(store.get(googleKeyName), "abc123")
     }
 
     func testSetNilDeletes() {
         let store = InMemorySecretStore()
-        store.set("abc123", for: deepLKeyName)
-        store.set(nil, for: deepLKeyName)
-        XCTAssertNil(store.get(deepLKeyName))
+        store.set("abc123", for: googleKeyName)
+        store.set(nil, for: googleKeyName)
+        XCTAssertNil(store.get(googleKeyName))
     }
 }

@@ -98,7 +98,7 @@ which `install-bar.sh` handles.)
 - `TranslationCore/` — Swift package with the translation engines and support
   types, fully unit-tested (`swift test --package-path TranslationCore`):
   - `TranslationEngine` protocol + `TranslationError`
-  - `GoogleEngine`, `AppleEngine` (on-device), and the older `DeepLEngine`
+  - `GoogleEngine` and `AppleEngine` (on-device)
   - `FallbackChain` — primary engine with automatic fallback
   - `SecretStore` / `KeychainSecretStore`, `HTTPClient`, timeout helpers
 - `PolytypeApp/` — the `PolytypeBar` menu-bar executable:

@@ -1,7 +1,6 @@
 import Foundation
 import Security
 
-public let deepLKeyName = "deepl-api-key"
 public let googleKeyName = "google-api-key"
 
 public protocol SecretStore: Sendable {
