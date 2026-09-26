@@ -71,23 +71,44 @@ final class TranslateService {
             guard let self else { return }
             if hadSelection {
                 self.translateClipboard(pb: pb, saved: saved)
-            } else if SmartSelection.selectParagraphAtCursor() {
-                // The target app just highlighted the paragraph at the cursor
-                // for us — copy exactly that.
-                let before2 = pb.changeCount
-                self.postCommandKey(CGKeyCode(kVK_ANSI_C))
-                self.waitForClipboardChange(pb, from: before2, attempts: 12) { changed in
-                    if changed {
-                        self.translateClipboard(pb: pb, saved: saved)
-                    } else {
-                        self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
-                    }
-                }
             } else {
-                // The focused app doesn't support Accessibility text ranges —
-                // fall back to select-all, but only translate it if it's short.
-                self.selectAllWithGuard(pb: pb, saved: saved)
+                self.trySmartParagraphSelection(pb: pb, saved: saved)
             }
+        }
+    }
+
+    /// After a synthesized ⌘C copied nothing (no manual selection), tries to
+    /// auto-select just the paragraph at the cursor. Retried once after a
+    /// short delay if the first attempt fails — traced back to the very
+    /// first real use right after a fresh install, which can hit a brief
+    /// window where Accessibility calls transiently fail before the
+    /// permission/process state has fully settled system-wide; a single
+    /// short-delayed retry covers that without meaningfully slowing down
+    /// the overwhelmingly common case where the first attempt already
+    /// succeeds.
+    private func trySmartParagraphSelection(pb: NSPasteboard, saved: [NSPasteboardItem], isRetry: Bool = false) {
+        if SmartSelection.selectParagraphAtCursor() {
+            // The target app just highlighted the paragraph at the cursor
+            // for us — copy exactly that.
+            let before = pb.changeCount
+            postCommandKey(CGKeyCode(kVK_ANSI_C))
+            waitForClipboardChange(pb, from: before, attempts: 12) { [weak self] changed in
+                guard let self else { return }
+                if changed {
+                    self.translateClipboard(pb: pb, saved: saved)
+                } else {
+                    self.finish(status: "∅", restore: saved, to: pb, after: 0.1)
+                }
+            }
+        } else if !isRetry {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.trySmartParagraphSelection(pb: pb, saved: saved, isRetry: true)
+            }
+        } else {
+            // The focused app doesn't support Accessibility text ranges (or
+            // both tries failed for some other reason) — fall back to
+            // select-all, but only translate it if it's short.
+            selectAllWithGuard(pb: pb, saved: saved)
         }
     }
 
