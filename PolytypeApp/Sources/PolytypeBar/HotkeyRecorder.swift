@@ -44,24 +44,38 @@ enum HotkeyFormat {
 /// presses (requiring at least one modifier) and reports it.
 final class HotkeyRecorderButton: NSButton {
     var onCapture: ((UInt32, UInt32, String) -> Void)?
-    /// Fired the instant recording starts or stops. The combo being edited is
-    /// usually still live as a global hotkey while this records, and Carbon's
+    /// Fired the instant recording starts (`true`), and again with `false`
+    /// only if recording ends *without* a capture (Escape, or clicking away)
+    /// — never after a successful capture. The combo being edited is usually
+    /// still live as a global hotkey while this records, and Carbon's
     /// global-hotkey interception happens before this button ever sees the
     /// keystroke — so pressing that same combo to re-confirm it never reaches
     /// here at all; instead it fires the *old* action, whose own synthesized
     /// key events (e.g. a translate's simulated ⌘A/⌘C to grab a selection)
     /// land on this button instead, since it's still first responder and
     /// still "recording" — silently recording the wrong combo. The caller
-    /// unregisters the live hotkey for the duration of recording (`true`) and
-    /// restores it if recording ends without a capture (`false`); a
-    /// successful capture re-registers the new combo on its own regardless.
+    /// unregisters the live hotkey on `true` and re-registers the *original*
+    /// combo on a cancel (`false`). A successful capture must NOT also fire
+    /// `false` here — its own `update()` call already re-registers the new
+    /// combo, and doing it again immediately afterward means four rapid
+    /// unregister/register calls for what should be a single final
+    /// registration, which on a fresh install (the only time this recorder
+    /// actually gets used for a non-default combo) left the last
+    /// registration reporting success while silently never delivering the
+    /// keystroke — a real, reproduced bug, not a guess.
     var onRecordingChange: ((Bool) -> Void)?
+    private var captured = false
     var idleTitle: String = "" { didSet { if !recording { title = idleTitle } } }
     private(set) var recording = false {
         didSet {
             title = recording ? "Press shortcut…" : idleTitle
             guard oldValue != recording else { return }
-            onRecordingChange?(recording)
+            if recording {
+                captured = false
+                onRecordingChange?(true)
+            } else if !captured {
+                onRecordingChange?(false)
+            }
         }
     }
 
@@ -94,6 +108,7 @@ final class HotkeyRecorderButton: NSButton {
         let mods = carbonModifiers(from: flags)
         guard mods != 0 else { NSSound.beep(); return }   // require a modifier
         let display = HotkeyFormat.string(flags: flags, chars: event.charactersIgnoringModifiers, keyCode: event.keyCode)
+        captured = true
         onCapture?(UInt32(event.keyCode), mods, display)
         recording = false
     }
