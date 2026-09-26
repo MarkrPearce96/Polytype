@@ -10,7 +10,13 @@ final class HotKey {
     private let id: UInt32
     private let action: () -> Void
 
-    private static var registry: [UInt32: HotKey] = [:]
+    /// Weak so the registry is a lookup table, not an owner — a strong entry
+    /// here would keep every past `HotKey` alive forever (nothing else would
+    /// ever be its sole owner to release), so `deinit` — and the
+    /// `UnregisterEventHotKey` call in it — would never run, leaking the old
+    /// combo as a permanently-active global hotkey alongside the new one.
+    private final class WeakBox { weak var value: HotKey?; init(_ v: HotKey) { value = v } }
+    private static var registry: [UInt32: WeakBox] = [:]
     private static var nextID: UInt32 = 1
     private static var handlerInstalled = false
 
@@ -27,7 +33,7 @@ final class HotKey {
         let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID,
                                          GetApplicationEventTarget(), 0, &ref)
         guard status == noErr, ref != nil else { return nil }
-        HotKey.registry[id] = self
+        HotKey.registry[id] = WeakBox(self)
     }
 
     deinit {
@@ -45,7 +51,7 @@ final class HotKey {
             GetEventParameter(event, EventParamName(kEventParamDirectObject),
                               EventParamType(typeEventHotKeyID), nil,
                               MemoryLayout<EventHotKeyID>.size, nil, &hkID)
-            HotKey.registry[hkID.id]?.action()
+            HotKey.registry[hkID.id]?.value?.action()
             return noErr
         }, 1, &spec, nil, nil)
     }

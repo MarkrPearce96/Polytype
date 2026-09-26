@@ -37,14 +37,18 @@ struct SettingsView: View {
             Form {
                 Section("Shortcuts") {
                     LabeledContent("Compose") {
-                        HotkeyRecorder(current: composeDisplay) { keyCode, mods, display in
+                        HotkeyRecorder(current: composeDisplay, onRecordingChange: { recording in
+                            if recording { HotkeyAccess.compose?.unregister() } else { HotkeyAccess.compose?.register() }
+                        }) { keyCode, mods, display in
                             if HotkeyAccess.compose?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
                                 composeDisplay = display; status = "Compose shortcut set to \(display)."
                             } else { status = "That shortcut is already in use — try another." }
                         }.frame(width: 118, height: 24)
                     }
                     LabeledContent("Read") {
-                        HotkeyRecorder(current: readDisplay) { keyCode, mods, display in
+                        HotkeyRecorder(current: readDisplay, onRecordingChange: { recording in
+                            if recording { HotkeyAccess.read?.unregister() } else { HotkeyAccess.read?.register() }
+                        }) { keyCode, mods, display in
                             if HotkeyAccess.read?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
                                 readDisplay = display; status = "Read shortcut set to \(display)."
                             } else { status = "That shortcut is already in use — try another." }

@@ -5,9 +5,18 @@ import AppKit
 /// in place, rather than needing a second window that can only ever guess at
 /// where the first one was. A custom borderless window instead of `NSMenu`
 /// means dismiss-on-click-outside and Escape-to-close have to be
-/// reimplemented (see `windowDidResignKey` and `PanelHostingView`), but menu
+/// reimplemented (see `windowDidResignKey` and `GradientPanelView.onEscape`), but menu
 /// positioning is fully within our control instead of AppKit's own opaque
 /// placement logic.
+/// A plain borderless `NSWindow` never becomes key by default (Apple grants
+/// that only to windows with a title bar or resize bar, or to `NSPanel`) —
+/// without this override, `makeKeyAndOrderFront` would show the panel but
+/// keyboard input inside it (typing into Settings' fields, recording a
+/// hotkey, Escape-to-close) would silently go nowhere.
+private final class KeyableBorderlessWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+}
+
 @MainActor
 final class DropdownPanel: NSObject, NSWindowDelegate {
     private let window: NSWindow
@@ -17,16 +26,32 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     /// changing), then held fixed while visible so the panel grows/shrinks
     /// from that same anchor rather than drifting as content changes size.
     private var anchorTopRight: NSPoint = .zero
-    /// Catches a click in another app or on the desktop — `windowDidResignKey`
-    /// alone isn't reliable for a borderless, non-activating-style window like
-    /// this one, so dismiss-on-click-outside is driven explicitly instead,
-    /// the same technique `NSPopover` uses internally for its own transient
-    /// dismissal.
-    private var globalClickMonitor: Any?
     /// Catches a click elsewhere *within this app* but outside the panel
-    /// (e.g. Setup Assistant's window) — global monitors only see events in
-    /// other applications, so this covers the gap.
+    /// (e.g. Setup Assistant's window) — `windowDidResignKey` covers clicks
+    /// in another app or on the desktop (see below), but never fires for a
+    /// click on a *different window of this same app*, since this app stays
+    /// the active app throughout.
+    ///
+    /// A *global* click monitor used to cover the "another app" case too, but
+    /// traced empirically it's unreliable on this system: the same physical
+    /// click on the status item was observed being redelivered to it anywhere
+    /// from ~150ms to several *seconds* later, sometimes arriving after a
+    /// subsequent open and hiding a panel that click had nothing to do with.
+    /// `windowDidResignKey` needs no such workaround now that the window can
+    /// actually become key at all (see `KeyableBorderlessWindow`) — it's a
+    /// first-party AppKit notification, not a hand-rolled polling mechanism,
+    /// so it doesn't share the global monitor's delivery quirks.
     private var localClickMonitor: Any?
+    /// Set for the duration of a status-button click — that click makes the
+    /// panel resign key as a side effect (a real transition now that it can
+    /// become key at all), which would otherwise fire `windowDidResignKey`
+    /// and hide the panel a beat before `toggle(near:)` below runs, which
+    /// then sees `isVisible == false` and reopens it — a click that's
+    /// supposed to close the panel instead makes it flash. `toggle(near:)` is
+    /// the single entry point for every status-button click (confirmed:
+    /// nothing else calls `show`/`hide`/`toggle` on this panel), so it's the
+    /// one place that can reliably scope this suppression to "this click."
+    private var suppressAutoHide = false
 
     /// Called right before the panel becomes visible (so callers can refresh
     /// content first) and right after it's dismissed for any reason —
@@ -37,7 +62,7 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
 
     override init() {
         shellView = GradientPanelView()
-        window = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+        window = KeyableBorderlessWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         super.init()
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -53,7 +78,17 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     var isVisible: Bool { window.isVisible }
 
     func toggle(near button: NSStatusBarButton?) {
+        suppressAutoHide = true
         if window.isVisible { hide() } else { show(near: button) }
+        // A real delay, not just a same-turn reset — traced empirically, the
+        // global monitor's delivery of *this same click* can arrive a beat
+        // later than the very next run-loop turn, so resetting too eagerly
+        // would still let it slip through and hide the panel right after
+        // this click opened it. Long enough to cover that; short enough that
+        // it can't plausibly delay a later, genuinely separate dismiss click.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.suppressAutoHide = false
+        }
     }
 
     func show(near button: NSStatusBarButton?) {
@@ -72,29 +107,27 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
         onDidHide?()
     }
 
-    /// - Parameter statusButtonWindow: excluded from the *local* monitor's
-    ///   dismiss check — the status item button lives in its own window, a
-    ///   click there is a different window than the panel's and would
-    ///   otherwise read as "outside," dismissing the panel a beat before the
-    ///   button's own click-to-toggle action runs and reopens it right away.
-    ///   The global monitor doesn't have this problem (it never sees clicks
-    ///   within this app at all), so only the local one needs the exclusion.
+    /// - Parameter statusButtonWindow: excluded unconditionally, not just for
+    ///   `suppressAutoHide`'s brief window — traced empirically, a status-
+    ///   button click's mouseDown can be delivered to this monitor anywhere
+    ///   from immediately up to (rarely) a couple of seconds later, well past
+    ///   any reasonable timing-based suppression. Its own identity, not its
+    ///   timing, is what makes it safe to always exclude: it's never actually
+    ///   "outside," since `toggle(near:)` already decides open vs. closed for
+    ///   that click on its own.
     private func startClickOutsideMonitors(statusButtonWindow: NSWindow?) {
         stopClickOutsideMonitors()
-        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            Task { @MainActor in self?.hide() }
-        }
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            guard let self else { return event }
-            if event.window !== self.window && event.window !== statusButtonWindow { self.hide() }
+            guard let self, !self.suppressAutoHide,
+                  event.window !== self.window, event.window !== statusButtonWindow
+            else { return event }
+            self.hide()
             return event   // never swallow the click — just observe it
         }
     }
 
     private func stopClickOutsideMonitors() {
-        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
         if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
-        globalClickMonitor = nil
         localClickMonitor = nil
     }
 
@@ -146,9 +179,14 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     }
 
     /// Dismiss the instant something else becomes key — clicking anywhere
-    /// outside the panel, exactly like a menu would close.
+    /// outside the panel, exactly like a menu would close. Not when that's
+    /// the status button itself (see `suppressAutoHide`) — its own click
+    /// handler already decides open vs. closed for that click.
     nonisolated func windowDidResignKey(_ notification: Notification) {
-        MainActor.assumeIsolated { hide() }
+        MainActor.assumeIsolated {
+            guard !suppressAutoHide else { return }
+            hide()
+        }
     }
 }
 

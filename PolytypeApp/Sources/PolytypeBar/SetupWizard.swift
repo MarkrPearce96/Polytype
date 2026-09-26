@@ -247,7 +247,9 @@ struct SetupView: View {
             HStack {
                 Text("Compose").font(.callout)
                 Spacer()
-                HotkeyRecorder(current: composeDisplay) { keyCode, mods, display in
+                HotkeyRecorder(current: composeDisplay, onRecordingChange: { recording in
+                    if recording { HotkeyAccess.compose?.unregister() } else { HotkeyAccess.compose?.register() }
+                }) { keyCode, mods, display in
                     if HotkeyAccess.compose?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
                         composeDisplay = display
                     }
@@ -256,7 +258,9 @@ struct SetupView: View {
             HStack {
                 Text("Read").font(.callout)
                 Spacer()
-                HotkeyRecorder(current: readDisplay) { keyCode, mods, display in
+                HotkeyRecorder(current: readDisplay, onRecordingChange: { recording in
+                    if recording { HotkeyAccess.read?.unregister() } else { HotkeyAccess.read?.register() }
+                }) { keyCode, mods, display in
                     if HotkeyAccess.read?.update(keyCode: keyCode, carbonMods: mods, display: display) == true {
                         readDisplay = display
                     }

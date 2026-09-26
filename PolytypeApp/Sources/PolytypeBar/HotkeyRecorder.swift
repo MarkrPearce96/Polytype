@@ -44,9 +44,25 @@ enum HotkeyFormat {
 /// presses (requiring at least one modifier) and reports it.
 final class HotkeyRecorderButton: NSButton {
     var onCapture: ((UInt32, UInt32, String) -> Void)?
+    /// Fired the instant recording starts or stops. The combo being edited is
+    /// usually still live as a global hotkey while this records, and Carbon's
+    /// global-hotkey interception happens before this button ever sees the
+    /// keystroke — so pressing that same combo to re-confirm it never reaches
+    /// here at all; instead it fires the *old* action, whose own synthesized
+    /// key events (e.g. a translate's simulated ⌘A/⌘C to grab a selection)
+    /// land on this button instead, since it's still first responder and
+    /// still "recording" — silently recording the wrong combo. The caller
+    /// unregisters the live hotkey for the duration of recording (`true`) and
+    /// restores it if recording ends without a capture (`false`); a
+    /// successful capture re-registers the new combo on its own regardless.
+    var onRecordingChange: ((Bool) -> Void)?
     var idleTitle: String = "" { didSet { if !recording { title = idleTitle } } }
     private(set) var recording = false {
-        didSet { title = recording ? "Press shortcut…" : idleTitle }
+        didSet {
+            title = recording ? "Press shortcut…" : idleTitle
+            guard oldValue != recording else { return }
+            onRecordingChange?(recording)
+        }
     }
 
     override init(frame frameRect: NSRect) { super.init(frame: frameRect); setup() }
@@ -92,12 +108,14 @@ final class HotkeyRecorderButton: NSButton {
 /// SwiftUI wrapper around `HotkeyRecorderButton`.
 struct HotkeyRecorder: NSViewRepresentable {
     let current: String
+    var onRecordingChange: (Bool) -> Void = { _ in }
     let onCapture: (UInt32, UInt32, String) -> Void
 
     func makeNSView(context: Context) -> HotkeyRecorderButton {
         let button = HotkeyRecorderButton()
         button.idleTitle = current
         button.onCapture = onCapture
+        button.onRecordingChange = onRecordingChange
         return button
     }
 
