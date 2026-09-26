@@ -42,16 +42,6 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     /// first-party AppKit notification, not a hand-rolled polling mechanism,
     /// so it doesn't share the global monitor's delivery quirks.
     private var localClickMonitor: Any?
-    /// Set for the duration of a status-button click — that click makes the
-    /// panel resign key as a side effect (a real transition now that it can
-    /// become key at all), which would otherwise fire `windowDidResignKey`
-    /// and hide the panel a beat before `toggle(near:)` below runs, which
-    /// then sees `isVisible == false` and reopens it — a click that's
-    /// supposed to close the panel instead makes it flash. `toggle(near:)` is
-    /// the single entry point for every status-button click (confirmed:
-    /// nothing else calls `show`/`hide`/`toggle` on this panel), so it's the
-    /// one place that can reliably scope this suppression to "this click."
-    private var suppressAutoHide = false
 
     /// Called right before the panel becomes visible (so callers can refresh
     /// content first) and right after it's dismissed for any reason —
@@ -78,17 +68,7 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     var isVisible: Bool { window.isVisible }
 
     func toggle(near button: NSStatusBarButton?) {
-        suppressAutoHide = true
         if window.isVisible { hide() } else { show(near: button) }
-        // A real delay, not just a same-turn reset — traced empirically, the
-        // global monitor's delivery of *this same click* can arrive a beat
-        // later than the very next run-loop turn, so resetting too eagerly
-        // would still let it slip through and hide the panel right after
-        // this click opened it. Long enough to cover that; short enough that
-        // it can't plausibly delay a later, genuinely separate dismiss click.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.suppressAutoHide = false
-        }
     }
 
     func show(near button: NSStatusBarButton?) {
@@ -107,20 +87,17 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
         onDidHide?()
     }
 
-    /// - Parameter statusButtonWindow: excluded unconditionally, not just for
-    ///   `suppressAutoHide`'s brief window — traced empirically, a status-
-    ///   button click's mouseDown can be delivered to this monitor anywhere
-    ///   from immediately up to (rarely) a couple of seconds later, well past
-    ///   any reasonable timing-based suppression. Its own identity, not its
-    ///   timing, is what makes it safe to always exclude: it's never actually
-    ///   "outside," since `toggle(near:)` already decides open vs. closed for
+    /// - Parameter statusButtonWindow: excluded by identity, not timing — a
+    ///   status-button click's mouseDown can be delivered to this monitor
+    ///   anywhere from immediately up to (rarely) a couple of seconds later
+    ///   (traced empirically), well past any reasonable timing-based
+    ///   suppression window. It's never actually "outside" regardless of when
+    ///   it arrives, since `toggle(near:)` already decides open vs. closed for
     ///   that click on its own.
     private func startClickOutsideMonitors(statusButtonWindow: NSWindow?) {
         stopClickOutsideMonitors()
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            guard let self, !self.suppressAutoHide,
-                  event.window !== self.window, event.window !== statusButtonWindow
-            else { return event }
+            guard let self, event.window !== self.window, event.window !== statusButtonWindow else { return event }
             self.hide()
             return event   // never swallow the click — just observe it
         }
@@ -179,14 +156,12 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     }
 
     /// Dismiss the instant something else becomes key — clicking anywhere
-    /// outside the panel, exactly like a menu would close. Not when that's
-    /// the status button itself (see `suppressAutoHide`) — its own click
-    /// handler already decides open vs. closed for that click.
+    /// outside the panel, exactly like a menu would close. A status-button
+    /// click that closes the panel also triggers this (as a natural side
+    /// effect of `hide()`'s own `orderOut`), but that's already harmless:
+    /// `hide()` no-ops once the window is no longer visible.
     nonisolated func windowDidResignKey(_ notification: Notification) {
-        MainActor.assumeIsolated {
-            guard !suppressAutoHide else { return }
-            hide()
-        }
+        MainActor.assumeIsolated { hide() }
     }
 }
 
