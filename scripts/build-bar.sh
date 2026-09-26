@@ -24,8 +24,8 @@ cp "$ROOT/PolytypeApp/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns
 
 # Overridable for release CI, which sets these from the git tag so the built
 # app's version matches what's published. Local dev builds keep these defaults.
-APP_VERSION="${APP_VERSION:-1.1.5}"
-APP_BUILD="${APP_BUILD:-12}"
+APP_VERSION="${APP_VERSION:-1.1.6}"
+APP_BUILD="${APP_BUILD:-13}"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
