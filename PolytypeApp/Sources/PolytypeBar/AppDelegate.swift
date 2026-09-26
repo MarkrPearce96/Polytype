@@ -214,7 +214,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.translateSelectionToPopup()
     }
 
+    /// The timestamp of the last click this actually acted on — guards
+    /// against the same physical click on the status item being redelivered
+    /// a second time (traced empirically: this can arrive anywhere from
+    /// immediately up to several seconds later), which would otherwise
+    /// toggle the panel again at a moment unrelated to anything the user is
+    /// currently doing.
+    private var lastStatusClickTimestamp: TimeInterval = 0
+
     @objc private func statusItemClicked() {
+        let timestamp = NSApp.currentEvent?.timestamp ?? 0
+        guard timestamp != lastStatusClickTimestamp else { return }
+        lastStatusClickTimestamp = timestamp
         dropdown.toggle(near: statusItem.button)
     }
 

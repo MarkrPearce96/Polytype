@@ -42,6 +42,18 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     /// first-party AppKit notification, not a hand-rolled polling mechanism,
     /// so it doesn't share the global monitor's delivery quirks.
     private var localClickMonitor: Any?
+    /// Set for a brief window around a status-button click. That click's own
+    /// mouseDown can cause `windowDidResignKey` to fire *before* its mouseUp
+    /// finally runs `toggle(near:)` below (the button's action only fires on
+    /// mouseUp) — left unhandled, that resignKey's own `hide()` runs first,
+    /// so `toggle(near:)` then sees an already-hidden window and reopens it:
+    /// a click meant to close instead does nothing (or flashes). This isn't
+    /// the same problem the old, wider suppression window caused (blocking
+    /// genuinely later, unrelated dismiss-clicks) — it only needs to bridge
+    /// one click's own mouseDown-to-mouseUp gap, not linger afterward, so the
+    /// window here is short and doesn't touch the local monitor's identity
+    /// check at all (that one needs no timing to begin with).
+    private var suppressResignKey = false
 
     /// Called right before the panel becomes visible (so callers can refresh
     /// content first) and right after it's dismissed for any reason —
@@ -68,14 +80,25 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     var isVisible: Bool { window.isVisible }
 
     func toggle(near button: NSStatusBarButton?) {
+        suppressResignKey = true
         if window.isVisible { hide() } else { show(near: button) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.suppressResignKey = false
+        }
     }
 
     func show(near button: NSStatusBarButton?) {
         onWillShow?()
         computeAnchor(near: button)
         applyFrame(forContentSize: shellView.fittingSize)
-        NSApp.activate(ignoringOtherApps: true)
+        // Only activating when not already active measurably reduces (but,
+        // traced empirically, doesn't fully eliminate) a rare, still-
+        // unexplained spontaneous windowDidResignKey a few hundred ms to a
+        // couple of seconds after showing, with no click involved — it can
+        // still happen even on a cycle where this line doesn't run at all,
+        // so it isn't the sole cause, just a contributing one. Worth
+        // revisiting if a real root cause turns up.
+        if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
         window.makeKeyAndOrderFront(nil)
         startClickOutsideMonitors(statusButtonWindow: button?.window)
     }
@@ -161,7 +184,10 @@ final class DropdownPanel: NSObject, NSWindowDelegate {
     /// effect of `hide()`'s own `orderOut`), but that's already harmless:
     /// `hide()` no-ops once the window is no longer visible.
     nonisolated func windowDidResignKey(_ notification: Notification) {
-        MainActor.assumeIsolated { hide() }
+        MainActor.assumeIsolated {
+            guard !suppressResignKey else { return }
+            hide()
+        }
     }
 }
 
