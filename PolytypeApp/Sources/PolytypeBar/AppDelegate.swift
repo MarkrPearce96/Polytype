@@ -4,22 +4,6 @@ import SwiftUI
 import TranslationCore
 import UserNotifications
 
-/// TEMPORARY — traces launch/hotkey-firing on a genuinely fresh install.
-/// Remove once found.
-func launchdbg(_ message: String) {
-    let line = "[LAUNCH] \(message)\n"
-    guard let data = line.data(using: .utf8) else { return }
-    let path = "/tmp/polytype-launch-debug.log"
-    if !FileManager.default.fileExists(atPath: path) {
-        FileManager.default.createFile(atPath: path, contents: nil)
-    }
-    if let handle = FileHandle(forWritingAtPath: path) {
-        handle.seekToEndOfFile()
-        handle.write(data)
-        handle.closeFile()
-    }
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -44,7 +28,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: MenuMeterBar!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        launchdbg("applicationDidFinishLaunching START")
         // Google Cloud Translation primary (free 500k chars/month), Apple
         // on-device as the offline/no-key fallback (macOS 15+).
         let secrets = KeychainSecretStore()
@@ -138,9 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsRow,
             quitRow,
         ])
-        launchdbg("menuStack.setRows count=\(menuStack.rows.count)")
         dropdown.setContent(menuStack)
-        launchdbg("dropdown.setContent(menuStack) done")
 
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
@@ -177,7 +158,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !SetupState.completed {
             SetupWindowController.shared.show()
         }
-        launchdbg("applicationDidFinishLaunching END")
     }
 
     /// First time the monthly cap is hit, tell the user we've switched to Apple.
@@ -222,18 +202,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The Compose action (hotkey + menu item).
     @objc private func translateNow() {
-        launchdbg("translateNow() fired")
         service.translateSelectionInPlace()
     }
 
     private func applyHotkeyRegistration() {
-        let composeOK = composeHotkey.register()
-        let readOK = readHotkey.register()
-        launchdbg("applyHotkeyRegistration compose=\(composeOK) read=\(readOK)")
+        composeHotkey.register()
+        readHotkey.register()
     }
 
     @objc private func readNow() {
-        launchdbg("readNow() fired")
         service.translateSelectionToPopup()
     }
 
@@ -249,7 +226,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let timestamp = NSApp.currentEvent?.timestamp ?? 0
         guard timestamp != lastStatusClickTimestamp else { return }
         lastStatusClickTimestamp = timestamp
-        launchdbg("statusItemClicked, menuStack.rows.count=\(menuStack.rows.count), dropdown.isVisible=\(dropdown.isVisible)")
         dropdown.toggle(near: statusItem.button)
     }
 
